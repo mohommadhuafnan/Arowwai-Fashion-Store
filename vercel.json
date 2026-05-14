@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm run install:all",
+  "installCommand": "NPM_CONFIG_PRODUCTION=false npm run install:all",
   "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/.next",
   "rewrites": [
