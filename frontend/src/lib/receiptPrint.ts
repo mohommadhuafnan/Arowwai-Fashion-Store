@@ -2,6 +2,7 @@ import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
 import { BRAND, getLogoUrl } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { whatsappAPI } from '@/lib/api';
 
 export interface SaleReceipt {
   invoiceNumber: string;
@@ -208,38 +209,50 @@ export function formatWhatsAppNumber(phone: string) {
   return `94${digits}`;
 }
 
-export type WhatsAppShareResult = 'shared' | 'download';
+export function formatWhatsAppDisplay(phone: string) {
+  const formatted = formatWhatsAppNumber(phone);
+  if (!formatted) return '';
+  if (formatted.startsWith('94') && formatted.length === 11) {
+    return `0${formatted.slice(2, 4)} ${formatted.slice(4, 7)} ${formatted.slice(7)}`;
+  }
+  return `+${formatted}`;
+}
 
-export async function shareReceiptViaWhatsApp(
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+export type WhatsAppSendResult = {
+  sentTo: string;
+  displayNumber: string;
+  message: string;
+};
+
+export async function sendReceiptViaWhatsApp(
   receipt: SaleReceipt,
   phone: string,
-): Promise<WhatsAppShareResult> {
+): Promise<WhatsAppSendResult> {
   const formatted = formatWhatsAppNumber(phone);
   if (!formatted) {
     throw new Error('Enter a valid WhatsApp number (e.g. 0771234567)');
   }
 
   const pdfBlob = await generateReceiptPdf(receipt);
-  const fileName = receiptPdfFileName(receipt.invoiceNumber);
-  const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+  const pdfBase64 = await blobToBase64(pdfBlob);
   const caption = `Your invoice from ${BRAND.fullName} — ${receipt.invoiceNumber}`;
 
-  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-    const canShareFiles = typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
-    if (canShareFiles) {
-      await navigator.share({ files: [file], title: fileName, text: caption });
-      return 'shared';
-    }
-  }
+  const res = await whatsappAPI.sendInvoice({
+    phone: formatted,
+    pdfBase64,
+    invoiceNumber: receipt.invoiceNumber,
+    caption,
+  });
 
-  const url = URL.createObjectURL(pdfBlob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-
-  const hint = `${caption}\n\nPDF invoice downloaded to your device — please attach "${fileName}" in WhatsApp.\n\nView online: ${buildInvoiceVerifyUrl(receipt.invoiceNumber)}`;
-  window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(hint)}`, '_blank', 'noopener,noreferrer');
-  return 'download';
+  return res.data.data;
 }

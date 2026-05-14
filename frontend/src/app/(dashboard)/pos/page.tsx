@@ -12,7 +12,7 @@ import {
   addToCart, removeFromCart, updateQuantity, setDiscount, setDiscountNote, setPaymentMethod, clearCart,
   selectCartSubtotal, selectCartTotal,
 } from '@/store/slices/posSlice';
-import { productAPI, saleAPI, branchAPI } from '@/lib/api';
+import { productAPI, saleAPI, branchAPI, whatsappAPI } from '@/lib/api';
 import { formatCurrency, formatDate, cn, getMediaUrl } from '@/lib/utils';
 import { BRAND } from '@/lib/brand';
 import BrandLogo from '@/components/ui/BrandLogo';
@@ -22,7 +22,9 @@ import {
   buildReceiptQrPayload,
   buildReceiptPrintHtml,
   generateReceiptQrDataUrl,
-  shareReceiptViaWhatsApp,
+  sendReceiptViaWhatsApp,
+  formatWhatsAppDisplay,
+  formatWhatsAppNumber,
 } from '@/lib/receiptPrint';
 
 const PAYMENT_METHODS = [
@@ -67,6 +69,8 @@ export default function POSPage() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastReceipt, setLastReceipt] = useState<SaleReceipt | null>(null);
   const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [whatsappSending, setWhatsappSending] = useState(false);
+  const [whatsappReady, setWhatsappReady] = useState<boolean | null>(null);
   const [branchId, setBranchId] = useState<string | null>(user?.branch?._id || null);
   const barcodeRef = useRef<HTMLInputElement>(null);
 
@@ -227,18 +231,35 @@ export default function POSPage() {
     }
   };
 
+  useEffect(() => {
+    if (!showReceipt) {
+      setWhatsappReady(null);
+      return;
+    }
+    whatsappAPI.getStatus()
+      .then((res) => setWhatsappReady(Boolean(res.data.data?.configured)))
+      .catch(() => setWhatsappReady(false));
+  }, [showReceipt]);
+
+  const customerWhatsAppDisplay = formatWhatsAppDisplay(whatsappNumber);
+  const customerWhatsAppValid = Boolean(formatWhatsAppNumber(whatsappNumber));
+
   const shareWhatsApp = async () => {
-    if (!lastReceipt) return;
+    if (!lastReceipt || whatsappSending) return;
+    if (!customerWhatsAppValid) {
+      toast.error('Enter a valid customer WhatsApp number');
+      return;
+    }
+    setWhatsappSending(true);
     try {
-      const result = await shareReceiptViaWhatsApp(lastReceipt, whatsappNumber);
-      if (result === 'shared') {
-        toast.success('Invoice PDF shared — choose WhatsApp');
-      } else {
-        toast.success('PDF downloaded — attach it in WhatsApp');
-      }
+      const result = await sendReceiptViaWhatsApp(lastReceipt, whatsappNumber);
+      toast.success(`Invoice PDF sent to ${result.displayNumber}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Could not share invoice';
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+        || (err instanceof Error ? err.message : 'Could not send invoice on WhatsApp');
       toast.error(msg);
+    } finally {
+      setWhatsappSending(false);
     }
   };
 
@@ -519,7 +540,7 @@ export default function POSPage() {
                 <p className="text-[10px] text-[var(--muted)] mt-2">Scan to view this invoice online</p>
               </div>
 
-              <div className="mb-4">
+              <motion.div className="mb-4">
                 <label className="text-xs text-[var(--muted)] block mb-1.5">Customer WhatsApp number</label>
                 <input
                   type="tel"
@@ -530,8 +551,12 @@ export default function POSPage() {
                   className="w-full px-3 py-2.5 rounded-xl text-sm text-[var(--foreground)] placeholder:text-[var(--input-placeholder)] input-glow"
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--border)' }}
                 />
-                <p className="text-[10px] text-[var(--muted)] mt-1">Sri Lanka format: 077... or 9477...</p>
-              </div>
+                <p className="text-[10px] text-[var(--muted)] mt-1">
+                  {whatsappReady === false
+                    ? 'Store WhatsApp API not connected yet — add WHATSAPP_ACCESS_TOKEN in Vercel.'
+                    : 'PDF invoice sends directly from your store WhatsApp to this number.'}
+                </p>
+              </motion.div>
 
               <motion.div className="grid grid-cols-2 gap-3">
                 <motion.button
@@ -544,11 +569,17 @@ export default function POSPage() {
                 </motion.button>
                 <motion.button
                   onClick={shareWhatsApp}
-                  className="py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-[#25D366] text-white hover:bg-[#20bd5a]"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                  disabled={!customerWhatsAppValid || whatsappSending}
+                  className="py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 bg-[#25D366] text-white hover:bg-[#20bd5a] disabled:opacity-50 disabled:cursor-not-allowed"
+                  whileHover={{ scale: customerWhatsAppValid && !whatsappSending ? 1.02 : 1 }}
+                  whileTap={{ scale: customerWhatsAppValid && !whatsappSending ? 0.98 : 1 }}
                 >
-                  <MessageCircle className="w-4 h-4" /> Send PDF on WhatsApp
+                  <MessageCircle className="w-4 h-4" />
+                  {whatsappSending
+                    ? 'Sending PDF...'
+                    : customerWhatsAppValid
+                      ? `Send PDF to ${customerWhatsAppDisplay}`
+                      : 'Enter number to send'}
                 </motion.button>
               </motion.div>
 
