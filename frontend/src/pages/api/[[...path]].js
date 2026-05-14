@@ -1,23 +1,26 @@
-const serverless = require('serverless-http');
-
-let handler;
+let appPromise;
 
 function rewriteUrl(req) {
   const segments = req.query?.path;
-  const suffix = Array.isArray(segments) ? segments.join('/') : (segments || '');
-  const query = req.url?.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  req.url = `/api/${suffix}${query}`;
+  const suffix = Array.isArray(segments)
+    ? segments.join('/')
+    : (typeof segments === 'string' ? segments : '');
+  const qs = req.url?.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  const apiPath = `/api/${suffix}${qs}`;
+  req.url = apiPath;
+  req.originalUrl = apiPath;
 }
 
 export default async function apiHandler(req, res) {
   rewriteUrl(req);
 
-  if (!handler) {
+  if (!appPromise) {
     const { createApp } = require('../../../server-backend/app');
-    const app = await createApp();
-    handler = serverless(app, { binary: ['image/*', 'application/pdf'] });
+    appPromise = createApp();
   }
-  return handler(req, res);
+
+  const app = await appPromise;
+  return app(req, res);
 }
 
 export const config = {
