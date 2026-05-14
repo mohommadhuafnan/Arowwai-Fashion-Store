@@ -21,17 +21,9 @@ import {
   type SaleReceipt,
   buildReceiptQrPayload,
   buildReceiptPrintHtml,
-  buildReceiptWhatsAppMessage,
   generateReceiptQrDataUrl,
+  shareReceiptViaWhatsApp,
 } from '@/lib/receiptPrint';
-
-function formatWhatsAppNumber(phone: string) {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 9) return '';
-  if (digits.startsWith('94')) return digits;
-  if (digits.startsWith('0')) return `94${digits.slice(1)}`;
-  return `94${digits}`;
-}
 
 const PAYMENT_METHODS = [
   { id: 'cash', label: 'Cash', icon: Banknote },
@@ -235,16 +227,19 @@ export default function POSPage() {
     }
   };
 
-  const shareWhatsApp = () => {
+  const shareWhatsApp = async () => {
     if (!lastReceipt) return;
-    const formatted = formatWhatsAppNumber(whatsappNumber);
-    if (!formatted) {
-      toast.error('Enter a valid WhatsApp number (e.g. 0771234567)');
-      return;
+    try {
+      const result = await shareReceiptViaWhatsApp(lastReceipt, whatsappNumber);
+      if (result === 'shared') {
+        toast.success('Invoice PDF shared — choose WhatsApp');
+      } else {
+        toast.success('PDF downloaded — attach it in WhatsApp');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not share invoice';
+      toast.error(msg);
     }
-    const text = buildReceiptWhatsAppMessage(lastReceipt);
-    window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(text)}`, '_blank');
-    toast.success('Opening WhatsApp...');
   };
 
   const closeReceipt = () => {
@@ -553,7 +548,7 @@ export default function POSPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
-                  <MessageCircle className="w-4 h-4" /> Send WhatsApp
+                  <MessageCircle className="w-4 h-4" /> Send PDF on WhatsApp
                 </motion.button>
               </motion.div>
 

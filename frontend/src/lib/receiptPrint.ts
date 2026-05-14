@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { jsPDF } from 'jspdf';
 import { BRAND, getLogoUrl } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
@@ -128,4 +129,117 @@ export function buildReceiptPrintHtml(receipt: SaleReceipt, qrDataUrl: string) {
       </div>
       <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script>
     </body></html>`;
+}
+
+function receiptPdfFileName(invoiceNumber: string) {
+  return `Invoice-${invoiceNumber.replace(/[^\w-]/g, '_')}.pdf`;
+}
+
+export async function generateReceiptPdf(receipt: SaleReceipt): Promise<Blob> {
+  const qrDataUrl = await generateReceiptQrDataUrl(receipt);
+  const invoiceUrl = buildInvoiceVerifyUrl(receipt.invoiceNumber);
+  const pageWidth = 80;
+  const margin = 6;
+  const contentWidth = pageWidth - margin * 2;
+  const pageHeight = Math.max(140, 72 + receipt.items.length * 14);
+  let y = 10;
+
+  const doc = new jsPDF({ unit: 'mm', format: [pageWidth, pageHeight] });
+
+  const center = (text: string, size = 10, bold = false) => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setFontSize(size);
+    doc.text(text, pageWidth / 2, y, { align: 'center', maxWidth: contentWidth });
+    y += size * 0.45 + 2;
+  };
+
+  const line = (text: string, size = 9, bold = false) => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setFontSize(size);
+    const lines = doc.splitTextToSize(text, contentWidth) as string[];
+    doc.text(lines, margin, y);
+    y += lines.length * (size * 0.42) + 1.5;
+  };
+
+  const rule = () => {
+    doc.setDrawColor(180);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 4;
+  };
+
+  center(BRAND.fullName, 11, true);
+  center(BRAND.location, 8);
+  y += 2;
+  line(`Invoice: ${receipt.invoiceNumber}`);
+  line(`Date: ${formatDate(receipt.date)}`);
+  rule();
+
+  receipt.items.forEach((item) => {
+    line(`${item.name} (${item.sku})`);
+    line(`  ${item.quantity} x ${formatCurrency(item.unitPrice)} = ${formatCurrency(item.unitPrice * item.quantity)}`, 8);
+  });
+
+  rule();
+  line(`Subtotal: ${formatCurrency(receipt.subtotal)}`);
+  if (receipt.discount > 0) {
+    line(`Discount: -${formatCurrency(receipt.discount)}${receipt.discountNote ? ` (${receipt.discountNote})` : ''}`);
+  }
+  line(`Tax: ${formatCurrency(receipt.tax)}`);
+  line(`TOTAL: ${formatCurrency(receipt.total)}`, 10, true);
+  line(`Payment: ${receipt.paymentMethod.toUpperCase()}`);
+  y += 2;
+  line(BRAND.receiptFooter, 8);
+  y += 2;
+
+  const qrSize = 28;
+  doc.addImage(qrDataUrl, 'PNG', (pageWidth - qrSize) / 2, y, qrSize, qrSize);
+  y += qrSize + 3;
+  center('Scan to view invoice online', 7);
+  line(invoiceUrl, 7);
+
+  return doc.output('blob');
+}
+
+export function formatWhatsAppNumber(phone: string) {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 9) return '';
+  if (digits.startsWith('94')) return digits;
+  if (digits.startsWith('0')) return `94${digits.slice(1)}`;
+  return `94${digits}`;
+}
+
+export type WhatsAppShareResult = 'shared' | 'download';
+
+export async function shareReceiptViaWhatsApp(
+  receipt: SaleReceipt,
+  phone: string,
+): Promise<WhatsAppShareResult> {
+  const formatted = formatWhatsAppNumber(phone);
+  if (!formatted) {
+    throw new Error('Enter a valid WhatsApp number (e.g. 0771234567)');
+  }
+
+  const pdfBlob = await generateReceiptPdf(receipt);
+  const fileName = receiptPdfFileName(receipt.invoiceNumber);
+  const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+  const caption = `Your invoice from ${BRAND.fullName} — ${receipt.invoiceNumber}`;
+
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    const canShareFiles = typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
+    if (canShareFiles) {
+      await navigator.share({ files: [file], title: fileName, text: caption });
+      return 'shared';
+    }
+  }
+
+  const url = URL.createObjectURL(pdfBlob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+
+  const hint = `${caption}\n\nPDF invoice downloaded to your device — please attach "${fileName}" in WhatsApp.\n\nView online: ${buildInvoiceVerifyUrl(receipt.invoiceNumber)}`;
+  window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(hint)}`, '_blank', 'noopener,noreferrer');
+  return 'download';
 }

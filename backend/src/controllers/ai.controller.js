@@ -56,24 +56,47 @@ const getStatus = async (req, res) => {
 };
 
 const postChat = async (req, res) => {
+  const userMessage = String(req.body?.message || '').trim();
   try {
-    const { message } = req.body;
-    if (!message?.trim()) {
+    if (!userMessage) {
       return res.status(400).json({ success: false, message: 'Message is required' });
-    }
-    if (!githubAi.isConfigured()) {
-      return res.status(503).json({ success: false, message: 'AI not configured. Set GITHUB_TOKEN in backend/.env' });
     }
 
     const snapshot = await buildStoreSnapshot();
-    const reply = await githubAi.askRetailAssistant(message.trim(), snapshot);
+
+    if (!githubAi.isConfigured()) {
+      return res.json({
+        success: true,
+        data: {
+          reply: githubAi.localRetailReply(userMessage, snapshot),
+          model: 'local-fallback',
+          source: 'fallback',
+        },
+      });
+    }
+
+    const reply = await githubAi.askRetailAssistant(userMessage, snapshot);
+    const usedFallback = reply.includes('offline assistant') || reply.includes('TrendyPOS offline');
 
     res.json({
       success: true,
-      data: { reply, model: githubAi.getModel() },
+      data: {
+        reply,
+        model: usedFallback ? 'local-fallback' : githubAi.getModel(),
+        source: usedFallback ? 'fallback' : 'github-ai',
+      },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message || 'AI chat failed' });
+    console.error('AI chat error:', err.message);
+    const snapshot = await buildStoreSnapshot();
+    res.json({
+      success: true,
+      data: {
+        reply: githubAi.localRetailReply(userMessage, snapshot),
+        model: 'local-fallback',
+        source: 'fallback',
+      },
+    });
   }
 };
 
