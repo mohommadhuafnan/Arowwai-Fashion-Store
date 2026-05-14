@@ -48,6 +48,21 @@ export const getFirebaseIdToken = async (): Promise<string | null> => {
   return user.getIdToken(true);
 };
 
+export function mapFirebaseAuthError(code?: string): string {
+  switch (code) {
+    case 'auth/unauthorized-domain':
+      return 'This website domain is not allowed in Firebase. Add arowwai-fashion-store.vercel.app in Firebase Console → Authentication → Settings → Authorized domains.';
+    case 'auth/popup-closed-by-user':
+      return 'Sign-in was cancelled.';
+    case 'auth/popup-blocked':
+      return 'Pop-up was blocked. Allow pop-ups for this site and try again.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account already exists with the same email using a different sign-in method.';
+    default:
+      return code?.replace('auth/', '').replace(/-/g, ' ') || 'Authentication failed';
+  }
+}
+
 export const parseDisplayName = (user: User) => {
   const name = user.displayName || user.email?.split('@')[0] || 'User';
   const parts = name.trim().split(/\s+/);

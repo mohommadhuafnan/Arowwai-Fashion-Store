@@ -9,6 +9,7 @@ import {
   firebaseSignOut,
   getFirebaseIdToken,
   parseDisplayName,
+  mapFirebaseAuthError,
 } from '@/lib/firebaseAuth';
 
 interface User {
@@ -99,7 +100,7 @@ export const firebaseAuth = createAsyncThunk(
     } catch (err: unknown) {
       const error = err as { code?: string; message?: string; response?: { data?: { message?: string } } };
       if (error.code?.startsWith('auth/')) {
-        return rejectWithValue(error.code.replace('auth/', '').replace(/-/g, ' '));
+        return rejectWithValue(mapFirebaseAuthError(error.code));
       }
       return rejectWithValue(error.response?.data?.message || error.message || 'Authentication failed');
     }
