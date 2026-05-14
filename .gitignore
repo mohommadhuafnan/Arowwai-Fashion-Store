@@ -10,3 +10,5 @@ backend/uploads/*
 .vercel
 *.log
 **/node_modules/
+
+.vercel
