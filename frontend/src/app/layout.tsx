@@ -17,7 +17,24 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'AROWWAI Fashion Store — POS',
-  description: 'Fashion retail POS for Mawanella — powered by Firebase & AI',
+  description: 'Fashion retail POS for Mawanella — access from any phone or device, 24/7',
+  applicationName: 'AROWWAI POS',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    title: 'AROWWAI POS',
+    statusBarStyle: 'black-translucent',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#0c0c0f',
 };
 
 export default function RootLayout({

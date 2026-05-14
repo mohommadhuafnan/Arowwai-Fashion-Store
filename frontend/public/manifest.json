@@ -1,0 +1,18 @@
+{
+  "name": "AROWWAI Fashion Store",
+  "short_name": "AROWWAI POS",
+  "description": "Fashion retail POS — use from any mobile phone or device",
+  "start_url": "/auth",
+  "display": "standalone",
+  "background_color": "#0c0c0f",
+  "theme_color": "#e11d48",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/arowwai-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -18,6 +18,8 @@ services:
         value: 10000
       - key: MONGODB_URI
         sync: false
+      - key: MONGODB_URI_SRV
+        sync: false
       - key: JWT_SECRET
         sync: false
       - key: JWT_REFRESH_SECRET
