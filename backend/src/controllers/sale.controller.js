@@ -80,8 +80,10 @@ const createSale = async (req, res) => {
 
   try {
     const io = getIO();
-    io.to(`branch-${sale.branch}`).emit('new-sale', sale);
-    io.emit('live-activity', { type: 'sale', data: sale });
+    if (io) {
+      io.to(`branch-${sale.branch}`).emit('new-sale', sale);
+      io.emit('live-activity', { type: 'sale', data: sale });
+    }
   } catch (_) {}
 
   res.status(201).json({ success: true, data: sale });

@@ -69,7 +69,9 @@ const uploadProductImage = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No image file provided' });
   }
-  const url = `/uploads/products/${req.file.filename}`;
+  const url = req.file.buffer
+    ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
+    : `/uploads/products/${req.file.filename}`;
   res.json({ success: true, data: { url } });
 };
 
