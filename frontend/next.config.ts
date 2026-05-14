@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     root: frontendRoot,
   },
   outputFileTracingRoot: frontendRoot,
+  serverExternalPackages: ['serverless-http', 'mongoose', 'firebase-admin'],
 };
 
 export default nextConfig;

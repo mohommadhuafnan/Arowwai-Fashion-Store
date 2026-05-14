@@ -33,7 +33,7 @@ interface InvoiceData {
 
 export default function InvoiceVerifyPage() {
   const params = useParams();
-  const invoiceNumber = decodeURIComponent(String(params.invoiceNumber || ''));
+  const invoiceNumber = decodeURIComponent(String(params?.invoiceNumber || ''));
   const [invoice, setInvoice] = useState<InvoiceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
