@@ -1,5 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "installCommand": "NPM_CONFIG_PRODUCTION=false npm install"
+  "installCommand": "NPM_CONFIG_PRODUCTION=false npm install && node scripts/sync-backend.mjs"
 }
