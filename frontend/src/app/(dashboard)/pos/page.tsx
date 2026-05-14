@@ -253,7 +253,11 @@ export default function POSPage() {
     setWhatsappSending(true);
     try {
       const result = await sendReceiptViaWhatsApp(lastReceipt, whatsappNumber);
-      toast.success(`Invoice PDF sent to ${result.displayNumber}`);
+      if (result.mode === 'direct') {
+        toast.success(`Invoice PDF sent to ${result.displayNumber}`);
+      } else {
+        toast.success(`WhatsApp opened for ${result.displayNumber} — tap Send (PDF downloaded)`);
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
         || (err instanceof Error ? err.message : 'Could not send invoice on WhatsApp');
@@ -553,7 +557,7 @@ export default function POSPage() {
                 />
                 <p className="text-[10px] text-[var(--muted)] mt-1">
                   {whatsappReady === false
-                    ? 'Store WhatsApp API not connected yet — add WHATSAPP_ACCESS_TOKEN in Vercel.'
+                    ? 'Quick mode: opens WhatsApp to this number + downloads PDF. For auto-send, connect store WhatsApp API in Vercel.'
                     : 'PDF invoice sends directly from your store WhatsApp to this number.'}
                 </p>
               </motion.div>

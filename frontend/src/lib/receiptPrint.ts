@@ -232,7 +232,50 @@ export type WhatsAppSendResult = {
   sentTo: string;
   displayNumber: string;
   message: string;
+  mode: 'direct' | 'fallback';
 };
+
+function downloadPdfBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function fallbackWhatsAppSend(
+  receipt: SaleReceipt,
+  formatted: string,
+  displayNumber: string,
+  pdfBlob: Blob,
+): Promise<WhatsAppSendResult> {
+  const fileName = receiptPdfFileName(receipt.invoiceNumber);
+  downloadPdfBlob(pdfBlob, fileName);
+
+  const text = [
+    `*${BRAND.fullName}*`,
+    BRAND.location,
+    '',
+    `Invoice: ${receipt.invoiceNumber}`,
+    `Date: ${formatDate(receipt.date)}`,
+    `Total: ${formatCurrency(receipt.total)}`,
+    '',
+    `View invoice online:`,
+    buildInvoiceVerifyUrl(receipt.invoiceNumber),
+    '',
+    BRAND.receiptFooter,
+  ].join('\n');
+
+  window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+
+  return {
+    sentTo: formatted,
+    displayNumber,
+    message: 'WhatsApp opened to customer number',
+    mode: 'fallback',
+  };
+}
 
 export async function sendReceiptViaWhatsApp(
   receipt: SaleReceipt,
@@ -243,16 +286,24 @@ export async function sendReceiptViaWhatsApp(
     throw new Error('Enter a valid WhatsApp number (e.g. 0771234567)');
   }
 
+  const displayNumber = formatWhatsAppDisplay(phone);
   const pdfBlob = await generateReceiptPdf(receipt);
   const pdfBase64 = await blobToBase64(pdfBlob);
   const caption = `Your invoice from ${BRAND.fullName} — ${receipt.invoiceNumber}`;
 
-  const res = await whatsappAPI.sendInvoice({
-    phone: formatted,
-    pdfBase64,
-    invoiceNumber: receipt.invoiceNumber,
-    caption,
-  });
-
-  return res.data.data;
+  try {
+    const res = await whatsappAPI.sendInvoice({
+      phone: formatted,
+      pdfBase64,
+      invoiceNumber: receipt.invoiceNumber,
+      caption,
+    });
+    return { ...res.data.data, mode: 'direct' };
+  } catch (err: unknown) {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    if (status === 503) {
+      return fallbackWhatsAppSend(receipt, formatted, displayNumber, pdfBlob);
+    }
+    throw err;
+  }
 }
