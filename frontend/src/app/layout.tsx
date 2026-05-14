@@ -4,6 +4,7 @@ import './globals.css';
 import StoreProvider from '@/components/providers/StoreProvider';
 import ThemeProvider from '@/components/providers/ThemeProvider';
 import FirebaseAnalytics from '@/components/providers/FirebaseAnalytics';
+import { BRAND } from '@/lib/brand';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -20,6 +21,11 @@ export const metadata: Metadata = {
   description: 'Fashion retail POS for Mawanella — access from any phone or device, 24/7',
   applicationName: 'AROWWAI POS',
   manifest: '/manifest.json',
+  icons: {
+    icon: [{ url: BRAND.logoPath, type: 'image/png' }],
+    shortcut: BRAND.logoPath,
+    apple: BRAND.logoPath,
+  },
   appleWebApp: {
     capable: true,
     title: 'AROWWAI POS',
