@@ -71,7 +71,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         )}
       >
         <Topbar />
-        <main className={cn('flex-1 overflow-auto', isPOS ? 'p-0' : 'p-4 sm:p-6')}>
+        <main
+          className={cn(
+            'flex-1',
+            isPOS ? 'flex min-h-0 flex-col overflow-hidden p-0' : 'overflow-auto p-4 sm:p-6'
+          )}
+        >
           {children}
         </main>
       </div>

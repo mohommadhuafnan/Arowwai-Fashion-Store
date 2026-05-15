@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote, QrCode, Wallet,
-  Receipt, Percent, User, ScanBarcode, X, MessageCircle, Printer, Package,
+  Receipt, Percent, ScanBarcode, X, MessageCircle, Printer, Package, ShoppingBag, LayoutGrid,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -71,6 +71,7 @@ export default function POSPage() {
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [whatsappSending, setWhatsappSending] = useState(false);
   const [branchId, setBranchId] = useState<string | null>(user?.branch?._id || null);
+  const [mobilePosTab, setMobilePosTab] = useState<'products' | 'cart'>('products');
   const barcodeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -258,9 +259,18 @@ export default function POSPage() {
   };
 
   return (
-    <motion.div className="flex h-full" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      {/* Products Panel */}
-      <div className="flex-1 flex flex-col p-4 overflow-hidden">
+    <motion.div
+      className="flex h-full min-h-0 flex-col lg:flex-row"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      {/* Products Panel — full width on mobile; cart uses separate tab */}
+      <div
+        className={cn(
+          'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-3 sm:p-4',
+          mobilePosTab !== 'products' && 'max-lg:hidden'
+        )}
+      >
         <div className="flex gap-3 mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
@@ -295,7 +305,7 @@ export default function POSPage() {
           ))}
         </div>
 
-        <motion.div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5 content-start items-start auto-rows-min pb-2">
+        <motion.div className="flex-1 min-h-0 overflow-y-auto overscroll-contain grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5 content-start items-start auto-rows-min pb-2 touch-pan-y">
           {filtered.map((product, i) => (
             <motion.button
               key={product._id}
@@ -321,15 +331,20 @@ export default function POSPage() {
         </motion.div>
       </div>
 
-      {/* Cart Panel */}
-      <div className="w-96 glass border-l border-white/5 flex flex-col">
+      {/* Cart Panel — drawer-style on small screens via tab switch */}
+      <div
+        className={cn(
+          'glass flex min-h-0 w-full flex-1 flex-col border-l border-white/5 lg:w-96 lg:max-w-[24rem] lg:flex-none',
+          mobilePosTab !== 'cart' && 'max-lg:hidden'
+        )}
+      >
         <div className="p-4 border-b border-white/5">
           <h2 className="font-semibold flex items-center gap-2">
             <Receipt className="w-4 h-4 text-purple-400" /> Cart ({cart.length})
           </h2>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 space-y-3 touch-pan-y">
           <AnimatePresence>
             {cart.length === 0 ? (
               <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center text-white/30 text-sm py-12">
@@ -512,7 +527,7 @@ export default function POSPage() {
               <div className="max-h-32 overflow-y-auto mb-4 rounded-xl border border-[var(--border)] p-3 space-y-1 text-left">
                 {lastReceipt.items.map((item, i) => (
                   <div key={i} className="flex justify-between text-xs text-[var(--muted-strong)]">
-                    <span className="truncate pr-2">{item.name} Ã—{item.quantity}</span>
+                    <span className="truncate pr-2">{item.name} ×{item.quantity}</span>
                     <span className="shrink-0">{formatCurrency(item.unitPrice * item.quantity)}</span>
                   </div>
                 ))}
@@ -580,6 +595,44 @@ export default function POSPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Mobile / tablet: switch between product grid and cart (wide fixed cart was hiding products) */}
+      <div
+        className="grid shrink-0 grid-cols-2 gap-0 border-t border-white/10 bg-[var(--surface)]/95 backdrop-blur-md lg:hidden"
+        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom, 0px))' }}
+      >
+        <button
+          type="button"
+          onClick={() => setMobilePosTab('products')}
+          className={cn(
+            'flex items-center justify-center gap-2 py-3.5 text-sm font-medium transition-colors',
+            mobilePosTab === 'products'
+              ? 'bg-white/10 text-white'
+              : 'text-white/45 hover:bg-white/5 hover:text-white/70'
+          )}
+        >
+          <LayoutGrid className="h-4 w-4 shrink-0" />
+          Products
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobilePosTab('cart')}
+          className={cn(
+            'flex items-center justify-center gap-2 border-l border-white/10 py-3.5 text-sm font-medium transition-colors',
+            mobilePosTab === 'cart'
+              ? 'bg-white/10 text-white'
+              : 'text-white/45 hover:bg-white/5 hover:text-white/70'
+          )}
+        >
+          <ShoppingBag className="h-4 w-4 shrink-0" />
+          Cart
+          {cart.length > 0 && (
+            <span className="rounded-full bg-[var(--accent)] px-2 py-0.5 text-[11px] font-bold text-white">
+              {cart.length}
+            </span>
+          )}
+        </button>
+      </div>
     </motion.div>
   );
 }
