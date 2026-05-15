@@ -9,11 +9,23 @@ import AnimatedCounter from '@/components/ui/AnimatedCounter';
 import { analyticsAPI, aiAPI } from '@/lib/api';
 import { formatCurrency, formatCurrencyCompact } from '@/lib/utils';
 
+const EMPTY_INSIGHTS: Record<string, unknown> = {
+  salesPrediction: { nextMonthRevenue: 0, trend: 'stable', confidence: 0 },
+  demandPredictions: [],
+  restockSuggestions: [],
+  salesTrend: [],
+  customerInsights: { avgOrderValue: 0, repeatRate: 0, topSegment: 'N/A' },
+  seasonalRecommendations: [],
+  source: 'fallback',
+  aiSummary: 'Could not load live data. Sign in again or check your connection, then tap Refresh.',
+};
+
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
 export default function AnalyticsPage() {
   const [insights, setInsights] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [aiOnline, setAiOnline] = useState(false);
   const [aiModel, setAiModel] = useState('');
   const [chatInput, setChatInput] = useState('');
@@ -23,14 +35,37 @@ export default function AnalyticsPage() {
 
   const loadInsights = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await analyticsAPI.getAIInsights();
-      setInsights(res.data.data);
-      if (res.data.data?.source === 'github-ai') {
-        toast.success('AI insights updated');
+      const data = res.data?.data;
+      if (data && typeof data === 'object') {
+        setInsights(data);
+        if (data.source === 'github-ai') {
+          toast.success('AI insights updated');
+        }
+      } else {
+        setInsights({ ...EMPTY_INSIGHTS, aiSummary: 'Unexpected response from server. Check NEXT_PUBLIC_API_URL on Vercel.' });
+        setLoadError('Invalid response');
       }
-    } catch {
-      toast.error('Could not load insights');
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+        || (err as { message?: string })?.message
+        || 'Could not load insights';
+      const hint =
+        status === 401
+          ? 'Session expired — sign out and sign in again.'
+          : status === 404
+            ? 'API not found — set NEXT_PUBLIC_API_URL to your site URL + /api (e.g. https://your-app.vercel.app/api).'
+            : msg;
+      setLoadError(hint);
+      setInsights({
+        ...EMPTY_INSIGHTS,
+        aiSummary: hint,
+      });
+      toast.error('Could not load AI insights');
     } finally {
       setLoading(false);
     }
@@ -74,16 +109,16 @@ export default function AnalyticsPage() {
     );
   }
 
-  if (!insights) return null;
+  const data = insights ?? EMPTY_INSIGHTS;
 
-  const prediction = insights.salesPrediction as { nextMonthRevenue: number; trend: string; confidence: number };
-  const demands = (insights.demandPredictions as { product: string; currentSales: number; predictedDemand: number; recommendation: string }[]) || [];
-  const restocks = (insights.restockSuggestions as { product: string; currentStock: number; suggestedOrder: number; urgency: string }[]) || [];
-  const trend = (insights.salesTrend as { _id: string; revenue: number }[]) || [];
-  const customer = insights.customerInsights as { avgOrderValue: number; repeatRate: number; topSegment: string };
-  const seasonal = (insights.seasonalRecommendations as { season: string; products: string[] }[]) || [];
-  const aiSummary = insights.aiSummary as string | undefined;
-  const source = insights.source as string | undefined;
+  const prediction = data.salesPrediction as { nextMonthRevenue: number; trend: string; confidence: number };
+  const demands = (data.demandPredictions as { product: string; currentSales: number; predictedDemand: number; recommendation: string }[]) || [];
+  const restocks = (data.restockSuggestions as { product: string; currentStock: number; suggestedOrder: number; urgency: string }[]) || [];
+  const trend = (data.salesTrend as { _id: string; revenue: number }[]) || [];
+  const customer = data.customerInsights as { avgOrderValue: number; repeatRate: number; topSegment: string };
+  const seasonal = (data.seasonalRecommendations as { season: string; products: string[] }[]) || [];
+  const aiSummary = data.aiSummary as string | undefined;
+  const source = data.source as string | undefined;
 
   const URGENCY_COLORS: Record<string, string> = {
     critical: 'text-red-400 bg-red-500/20',
@@ -104,12 +139,17 @@ export default function AnalyticsPage() {
           </motion.div>
           <div>
             <h1 className="text-2xl font-bold gradient-text">AI Analytics</h1>
-            <p className="text-sm text-[var(--muted)]">
-              {aiOnline ? `GitHub Models · ${aiModel}` : 'AI not configured — using local fallback'}
+            <p className="text-sm text-[var(--foreground)]">
+              {aiOnline ? `GitHub Models · ${aiModel}` : 'GitHub AI optional — chat uses local assistant if needed'}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {loadError && (
+            <span className="text-[10px] text-amber-400 max-w-[200px] truncate" title={loadError}>
+              Check connection / login
+            </span>
+          )}
           <span className={`text-[10px] px-2.5 py-1 rounded-full font-semibold uppercase tracking-wide ${aiOnline ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'}`}>
             {source === 'github-ai' ? 'Live AI' : 'Local'}
           </span>
@@ -273,15 +313,15 @@ export default function AnalyticsPage() {
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-            placeholder={aiOnline ? 'Ask your retail AI assistant...' : 'Configure GITHUB_TOKEN to enable chat'}
-            disabled={!aiOnline || chatLoading}
+            placeholder="Ask your retail AI assistant..."
+            disabled={chatLoading}
             className="flex-1 px-3 py-2.5 rounded-xl text-sm text-[var(--foreground)] placeholder:text-[var(--input-placeholder)] input-glow disabled:opacity-50"
             style={{ background: 'var(--input-bg)', border: '1px solid var(--border)' }}
           />
           <button
             type="button"
             onClick={sendChat}
-            disabled={!aiOnline || chatLoading || !chatInput.trim()}
+            disabled={chatLoading || !chatInput.trim()}
             className="px-4 py-2.5 rounded-xl btn-primary text-sm flex items-center gap-1.5 disabled:opacity-40"
           >
             <Send className="w-4 h-4" />

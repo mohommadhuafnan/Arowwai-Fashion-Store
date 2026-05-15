@@ -65,10 +65,20 @@ const getDashboardStats = async (req, res) => {
 };
 
 const getAIInsights = async (req, res) => {
-  const snapshot = await buildStoreSnapshot();
-  const { topProducts, lowStock, salesTrend } = snapshot;
+  const emptySnapshot = {
+    store: 'AROWWAI Fashion Store',
+    location: 'Mawanella, Sri Lanka',
+    currency: 'LKR',
+    topProducts: [],
+    lowStock: [],
+    salesTrend: [],
+    customerCount: 0,
+    avgOrderValue: 0,
+    totalOrders: 0,
+  };
 
-  const fallback = () => {
+  const buildFallback = (snapshot) => {
+    const { topProducts, lowStock, salesTrend } = snapshot;
     const predictions = (topProducts || []).slice(0, 5).map((p) => ({
       product: p.name,
       currentSales: p.soldCount || 0,
@@ -88,8 +98,8 @@ const getAIInsights = async (req, res) => {
 
     return {
       salesPrediction: {
-        nextMonthRevenue: Math.ceil(avgDaily * 30 * 1.08),
-        trend: 'upward',
+        nextMonthRevenue: Math.ceil(avgDaily * 30 * 1.08) || 0,
+        trend: 'stable',
         confidence: 0.75,
       },
       demandPredictions: predictions,
@@ -110,23 +120,36 @@ const getAIInsights = async (req, res) => {
   };
 
   try {
-    if (!githubAi.isConfigured()) {
-      return res.json({ success: true, data: fallback() });
+    let snapshot;
+    try {
+      snapshot = await buildStoreSnapshot();
+    } catch (dbErr) {
+      console.error('AI insights DB error:', dbErr.message);
+      snapshot = emptySnapshot;
     }
 
-    const aiData = await githubAi.generateStoreInsights(snapshot);
-    res.json({
-      success: true,
-      data: {
-        ...aiData,
-        salesTrend: salesTrend || [],
-        source: 'github-ai',
-        model: githubAi.getModel(),
-      },
-    });
+    if (!githubAi.isConfigured()) {
+      return res.json({ success: true, data: buildFallback(snapshot) });
+    }
+
+    try {
+      const aiData = await githubAi.generateStoreInsights(snapshot);
+      return res.json({
+        success: true,
+        data: {
+          ...aiData,
+          salesTrend: salesTrend || [],
+          source: 'github-ai',
+          model: githubAi.getModel(),
+        },
+      });
+    } catch (err) {
+      console.error('AI insights error:', err.message);
+      return res.json({ success: true, data: { ...buildFallback(snapshot), aiError: err.message } });
+    }
   } catch (err) {
-    console.error('AI insights error:', err.message);
-    res.json({ success: true, data: { ...fallback(), aiError: err.message } });
+    console.error('AI insights fatal:', err.message);
+    return res.json({ success: true, data: buildFallback(emptySnapshot) });
   }
 };
 
