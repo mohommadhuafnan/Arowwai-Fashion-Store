@@ -47,13 +47,13 @@ export const authAPI = {
 
 export const analyticsAPI = {
   getDashboard: (params?: Record<string, string>) => api.get('/analytics/dashboard', { params }),
-  getAIInsights: () => api.get('/analytics/ai-insights'),
+  getAIInsights: () => api.get('/analytics/ai-insights', { timeout: 120000 }),
   getSalesChart: (days?: number) => api.get('/analytics/sales-chart', { params: { days } }),
 };
 
 export const aiAPI = {
-  getStatus: () => api.get('/ai/status'),
-  chat: (message: string) => api.post('/ai/chat', { message }),
+  getStatus: () => api.get('/ai/status', { timeout: 20000 }),
+  chat: (message: string) => api.post('/ai/chat', { message }, { timeout: 120000 }),
 };
 
 export const productAPI = {

@@ -17,13 +17,17 @@ const EMPTY_INSIGHTS: Record<string, unknown> = {
   customerInsights: { avgOrderValue: 0, repeatRate: 0, topSegment: 'N/A' },
   seasonalRecommendations: [],
   source: 'fallback',
-  aiSummary: 'Could not load live data. Sign in again or check your connection, then tap Refresh.',
+  aiSummary: 'Loading your store insights…',
 };
+
+function initialInsights() {
+  return { ...EMPTY_INSIGHTS, aiSummary: 'Loading your store insights…' };
+}
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 
 export default function AnalyticsPage() {
-  const [insights, setInsights] = useState<Record<string, unknown> | null>(null);
+  const [insights, setInsights] = useState<Record<string, unknown>>(initialInsights);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [aiOnline, setAiOnline] = useState(false);
@@ -54,12 +58,16 @@ export default function AnalyticsPage() {
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message
         || (err as { message?: string })?.message
         || 'Could not load insights';
+      const isTimeout = (err as { code?: string })?.code === 'ECONNABORTED'
+        || /timeout/i.test(String((err as { message?: string })?.message || ''));
       const hint =
-        status === 401
-          ? 'Session expired — sign out and sign in again.'
-          : status === 404
-            ? 'API not found — set NEXT_PUBLIC_API_URL to your site URL + /api (e.g. https://your-app.vercel.app/api).'
-            : msg;
+        isTimeout
+          ? 'Request timed out — GitHub AI may be slow. Tap Refresh or try again in a minute.'
+          : status === 401
+            ? 'Session expired — sign out and sign in again.'
+            : status === 404
+              ? 'API not found — set NEXT_PUBLIC_API_URL to your site URL + /api (e.g. https://your-app.vercel.app/api).'
+              : msg;
       setLoadError(hint);
       setInsights({
         ...EMPTY_INSIGHTS,
@@ -101,15 +109,7 @@ export default function AnalyticsPage() {
     }
   };
 
-  if (loading && !insights) {
-    return (
-      <motion.div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
-      </motion.div>
-    );
-  }
-
-  const data = insights ?? EMPTY_INSIGHTS;
+  const data = insights;
 
   const prediction = data.salesPrediction as { nextMonthRevenue: number; trend: string; confidence: number };
   const demands = (data.demandPredictions as { product: string; currentSales: number; predictedDemand: number; recommendation: string }[]) || [];
@@ -128,6 +128,12 @@ export default function AnalyticsPage() {
 
   return (
     <motion.div className="space-y-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      {loading && (
+        <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
+          <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent" />
+          Updating insights from your store…
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <motion.div
