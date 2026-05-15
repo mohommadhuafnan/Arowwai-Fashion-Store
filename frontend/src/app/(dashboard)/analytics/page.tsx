@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Brain, TrendingUp, Package, Users, Sparkles, ArrowUpRight, RefreshCw, Send, Bot } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -37,6 +37,12 @@ export default function AnalyticsPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const apiHostLabel = useMemo(() => {
+    const raw = process.env.NEXT_PUBLIC_API_URL || '';
+    if (!raw.trim()) return 'localhost (set NEXT_PUBLIC_API_URL on Vercel)';
+    return raw.replace(/\/api\/?$/i, '').replace(/^https?:\/\//i, '');
+  }, []);
+
   const loadInsights = async () => {
     setLoading(true);
     setLoadError(null);
@@ -46,6 +52,8 @@ export default function AnalyticsPage() {
       if (data && typeof data === 'object') {
         setInsights(data);
         if (data.source === 'github-ai') {
+          setAiOnline(true);
+          if (typeof data.model === 'string' && data.model) setAiModel(data.model);
           toast.success('AI insights updated');
         }
       } else {
@@ -76,15 +84,18 @@ export default function AnalyticsPage() {
       toast.error('Could not load AI insights');
     } finally {
       setLoading(false);
+      try {
+        const st = await aiAPI.getStatus();
+        setAiOnline(Boolean(st.data.data?.configured));
+        if (st.data.data?.model) setAiModel(String(st.data.data.model));
+      } catch {
+        setAiOnline(false);
+      }
     }
   };
 
   useEffect(() => {
     loadInsights();
-    aiAPI.getStatus().then((res) => {
-      setAiOnline(res.data.data?.configured);
-      setAiModel(res.data.data?.model || '');
-    }).catch(() => setAiOnline(false));
   }, []);
 
   useEffect(() => {
@@ -145,8 +156,12 @@ export default function AnalyticsPage() {
           </motion.div>
           <div>
             <h1 className="text-2xl font-bold gradient-text">AI Analytics</h1>
-            <p className="text-sm text-[var(--foreground)]">
-              {aiOnline ? `GitHub Models · ${aiModel}` : 'GitHub AI optional — chat uses local assistant if needed'}
+            <p className="text-sm text-[var(--muted)]">
+              API <span className="font-mono text-[var(--foreground)]">{apiHostLabel}</span>
+              {' · '}
+              {aiOnline
+                ? <>GitHub Models ready · <span className="text-[var(--foreground)]">{aiModel || 'openai/gpt-4o-mini'}</span></>
+                : <>No server token — add <span className="font-mono text-[var(--foreground)]">GITHUB_TOKEN</span> (models:read) on Vercel, redeploy</>}
             </p>
           </div>
         </div>

@@ -8,6 +8,7 @@ const path = require('path');
 const connectDB = require('./src/config/db');
 const { initFirebaseAdmin } = require('./src/config/firebase');
 const errorHandler = require('./src/middleware/errorHandler');
+const githubAi = require('./src/services/githubAi.service');
 
 const authRoutes = require('./src/routes/auth.routes');
 const productRoutes = require('./src/routes/product.routes');
@@ -62,7 +63,15 @@ async function createApp() {
   }
 
   app.get('/api/health', (_, res) => {
-    res.json({ success: true, message: 'TrendyPOS AI API is running', version: '1.0.0' });
+    res.json({
+      success: true,
+      message: 'TrendyPOS AI API is running',
+      version: '1.0.0',
+      githubModels: {
+        configured: githubAi.isConfigured(),
+        model: githubAi.isConfigured() ? githubAi.getModel() : null,
+      },
+    });
   });
 
   app.use('/api/auth', authRoutes);
