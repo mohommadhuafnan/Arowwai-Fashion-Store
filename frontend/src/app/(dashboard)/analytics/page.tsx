@@ -24,7 +24,7 @@ function initialInsights() {
   return { ...EMPTY_INSIGHTS, aiSummary: 'Loading your store insights…' };
 }
 
-type ChatMessage = { role: 'user' | 'assistant'; content: string };
+type ChatMessage = { role: 'user' | 'assistant'; content: string; source?: 'github-ai' | 'fallback' };
 
 export default function AnalyticsPage() {
   const [insights, setInsights] = useState<Record<string, unknown>>(initialInsights);
@@ -111,7 +111,13 @@ export default function AnalyticsPage() {
     setChatLoading(true);
     try {
       const res = await aiAPI.chat(text, historyPayload);
-      setMessages((m) => [...m, { role: 'assistant', content: res.data.data.reply }]);
+      const d = res.data?.data as { reply?: string; source?: string } | undefined;
+      const reply = typeof d?.reply === 'string' ? d.reply : '';
+      const msgSource = d?.source === 'github-ai' || d?.source === 'fallback' ? d.source : undefined;
+      setMessages((m) => [...m, { role: 'assistant', content: reply || 'No reply from server.', source: msgSource }]);
+      if (aiOnline && msgSource === 'fallback') {
+        toast('Live model fell back to built-in rules — check server logs or token (models:read).', { icon: 'ℹ️' });
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI chat failed';
       toast.error(msg);
@@ -320,6 +326,11 @@ export default function AnalyticsPage() {
               }`}
             >
               {msg.content}
+              {msg.role === 'assistant' && msg.source && (
+                <p className="text-[10px] text-[var(--muted)] mt-2 pt-2 border-t border-[var(--border-subtle)]/60">
+                  {msg.source === 'github-ai' ? 'GitHub Models — answer from live POS snapshot' : 'Built-in rules — token missing or live model unavailable'}
+                </p>
+              )}
             </div>
           ))}
           {chatLoading && (

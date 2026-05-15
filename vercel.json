@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "rootDirectory": "frontend"
+  "rootDirectory": "frontend",
+  "installCommand": "NPM_CONFIG_PRODUCTION=false npm install && node scripts/sync-backend.mjs",
+  "functions": {
+    "src/pages/api/[[...path]].js": {
+      "maxDuration": 60
+    }
+  }
 }

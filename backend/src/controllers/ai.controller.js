@@ -142,13 +142,41 @@ async function buildStoreSnapshot() {
   };
 }
 
+/** Smaller JSON for chat so GitHub Models requests stay fast and under size limits. */
+function compactSnapshotForChat(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return snapshot;
+  const st = snapshot.salesTrend;
+  const trendTail = Array.isArray(st) ? st.slice(-14) : [];
+  return {
+    store: snapshot.store,
+    location: snapshot.location,
+    currency: snapshot.currency,
+    snapshotGeneratedAt: snapshot.snapshotGeneratedAt,
+    todaySales: snapshot.todaySales,
+    yesterdaySales: snapshot.yesterdaySales,
+    last7Days: snapshot.last7Days,
+    last24Hours: snapshot.last24Hours,
+    recentInvoices: (snapshot.recentInvoices || []).slice(0, 6),
+    topProducts: (snapshot.topProducts || []).slice(0, 8),
+    lowStock: (snapshot.lowStock || []).slice(0, 12),
+    salesTrend: trendTail,
+    customerCount: snapshot.customerCount,
+    avgOrderValue: snapshot.avgOrderValue,
+    totalOrders: snapshot.totalOrders,
+  };
+}
+
 const getStatus = async (req, res) => {
+  const configured = githubAi.isConfigured();
   res.json({
     success: true,
     data: {
-      configured: githubAi.isConfigured(),
+      configured,
       model: githubAi.getModel(),
       provider: 'GitHub Models',
+      hint: configured
+        ? 'Chat uses GitHub Models with a live POS snapshot. Put GITHUB_TOKEN only on the API server (e.g. Vercel env for the backend), not in NEXT_PUBLIC_ variables.'
+        : 'Set GITHUB_TOKEN (GitHub PAT with models:read) on your deployed API server, redeploy, then refresh this page.',
     },
   });
 };
@@ -161,6 +189,7 @@ const postChat = async (req, res) => {
     }
 
     const snapshot = await buildStoreSnapshot();
+    const chatSnapshot = compactSnapshotForChat(snapshot);
 
     const rawHistory = Array.isArray(req.body?.history) ? req.body.history : [];
     const history = rawHistory
@@ -172,32 +201,35 @@ const postChat = async (req, res) => {
       return res.json({
         success: true,
         data: {
-          reply: githubAi.localRetailReply(userMessage, snapshot, { fallbackReason: 'not-configured' }),
+          reply: githubAi.localRetailReply(userMessage, chatSnapshot, { fallbackReason: 'not-configured' }),
           model: 'local-fallback',
           source: 'fallback',
         },
       });
     }
 
-    const reply = await githubAi.askRetailAssistant(userMessage, snapshot, history);
-    const usedFallback =
-      reply.includes('GITHUB_TOKEN') || reply.includes('GitHub Models is busy') || reply.includes('Live AI had a hiccup');
+    const { reply, source } = await githubAi.askRetailAssistant(userMessage, chatSnapshot, history);
 
     res.json({
       success: true,
       data: {
         reply,
-        model: usedFallback ? 'local-fallback' : githubAi.getModel(),
-        source: usedFallback ? 'fallback' : 'github-ai',
+        model: source === 'fallback' ? 'local-fallback' : githubAi.getModel(),
+        source,
       },
     });
   } catch (err) {
     console.error('AI chat error:', err.message);
-    const snapshot = await buildStoreSnapshot();
+    let chatSnapshot = {};
+    try {
+      chatSnapshot = compactSnapshotForChat(await buildStoreSnapshot());
+    } catch (_) {
+      /* ignore */
+    }
     res.json({
       success: true,
       data: {
-        reply: githubAi.localRetailReply(userMessage, snapshot, { fallbackReason: 'error' }),
+        reply: githubAi.localRetailReply(userMessage, chatSnapshot, { fallbackReason: 'error' }),
         model: 'local-fallback',
         source: 'fallback',
       },

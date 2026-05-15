@@ -5,7 +5,7 @@ const DEFAULT_MODEL = process.env.GITHUB_AI_MODEL || 'openai/gpt-4o-mini';
 let clientPromise = null;
 
 async function getClient() {
-  const token = process.env.GITHUB_TOKEN;
+  const token = String(process.env.GITHUB_TOKEN || '').trim();
   if (!token) {
     throw new Error('GITHUB_TOKEN is not configured. Add it to backend/.env');
   }
@@ -22,7 +22,7 @@ async function getClient() {
 }
 
 function isConfigured() {
-  return Boolean(process.env.GITHUB_TOKEN);
+  return Boolean(process.env.GITHUB_TOKEN && String(process.env.GITHUB_TOKEN).trim());
 }
 
 function getModel() {
@@ -215,10 +215,8 @@ function extractJsonBlock(text) {
 }
 
 /**
- * Retail assistant — uses rich snapshot + optional chat history so answers match each question.
- * @param {string} userMessage
- * @param {object|null} storeContext
- * @param {Array<{role: string, content: string}>} [history]
+ * Retail assistant — returns whether GitHub Models answered or built-in rules were used.
+ * @returns {{ reply: string, source: 'github-ai' | 'fallback' }}
  */
 async function askRetailAssistant(userMessage, storeContext = null, history = []) {
   const safeHistory = Array.isArray(history)
@@ -227,19 +225,21 @@ async function askRetailAssistant(userMessage, storeContext = null, history = []
         .slice(-8)
         .map((m) => ({
           role: m.role,
-          content: m.content.slice(0, 2500),
+          content: m.content.slice(0, 2000),
         }))
     : [];
 
   const contextBlock = storeContext
-    ? `\n\nLIVE POS snapshot (JSON — read fields like todaySales, yesterdaySales, last7Days, last24Hours, recentInvoices, topProducts, lowStock, salesTrend, avgOrderValue, totalOrders; today/yesterday use Asia/Colombo calendar day):\n${JSON.stringify(storeContext, null, 2)}`
+    ? `\n\nLIVE POS snapshot (JSON). Use these exact figures when the user asks about sales, dates, or stock. Fields: todaySales, yesterdaySales, last7Days, last24Hours, recentInvoices, topProducts, lowStock, salesTrend (daily revenue), customerCount, avgOrderValue, totalOrders. todaySales/yesterdaySales use Asia/Colombo calendar day.\n${JSON.stringify(storeContext)}`
     : '';
 
   const systemPrompt =
-    'You are TrendyPOS AI for AROWWAI Fashion Store in Mawanella, Sri Lanka. ' +
-    'You MUST answer the user’s *current* question using numbers from the JSON snapshot when relevant (e.g. todaySales for “today”, yesterdaySales for “yesterday”, last7Days, recentInvoices). ' +
-    'Do NOT repeat your previous assistant message verbatim if the user asked something new—vary wording and focus on what they asked now. ' +
-    'Use LKR. Be concise and practical unless they ask for detail.';
+    'You are TrendyPOS AI for AROWWAI Fashion Store in Mawanella, Sri Lanka (fashion POS). ' +
+    'You MUST read the JSON snapshot in the user message and answer their *current* question with those numbers when relevant. ' +
+    'Never ignore the snapshot and give a generic retail essay. ' +
+    'If the question is not covered by the data, say what is missing and what you *can* answer from the JSON. ' +
+    'Do not repeat your previous reply verbatim when the user changes the topic. ' +
+    'Use LKR. Be concise (short paragraphs or bullets).';
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -251,12 +251,22 @@ async function askRetailAssistant(userMessage, storeContext = null, history = []
   ];
 
   try {
-    return await chatCompletion(messages, { temperature: 0.58, max_tokens: 1800 });
+    const raw = (await chatCompletion(messages, { temperature: 0.68, max_tokens: 2200 })).trim();
+    if (!raw) {
+      return {
+        reply: localRetailReply(userMessage, storeContext, { fallbackReason: 'error' }),
+        source: 'fallback',
+      };
+    }
+    return { reply: raw, source: 'github-ai' };
   } catch (err) {
     console.error('GitHub AI chat fallback:', err.message);
     const msg = String(err?.message || '');
     const reason = /rate limit|429|too many requests/i.test(msg) ? 'rate-limit' : 'error';
-    return localRetailReply(userMessage, storeContext, { fallbackReason: reason });
+    return {
+      reply: localRetailReply(userMessage, storeContext, { fallbackReason: reason }),
+      source: 'fallback',
+    };
   }
 }
 

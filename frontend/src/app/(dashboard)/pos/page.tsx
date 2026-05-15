@@ -249,7 +249,7 @@ export default function POSPage() {
       const result = await sendReceiptViaWhatsApp(lastReceipt, whatsappNumber, {
         externalChatWindow: chatWindow,
       });
-      toast.success(result.message);
+      toast.success(result.message, { duration: result.mode === 'wa-web' ? 8000 : 5000 });
     } catch (err: unknown) {
       chatWindow?.close();
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
@@ -563,7 +563,7 @@ export default function POSPage() {
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--border)' }}
                 />
                 <p className="text-[10px] text-[var(--muted)] mt-1">
-                  First, your phone should offer **Share** → **WhatsApp** → pick this customer’s chat — the **PDF** is sent as a file (no fake “attached PDF” text). If Share does not appear, we open WhatsApp and save the PDF once so you can attach it. **On a PC browser** only the PDF file is saved — use your phone for one-tap share to WhatsApp.
+                  Enter the customer&apos;s WhatsApp number, then tap the green button. On phones, you usually get Share → WhatsApp → choose this contact; the PDF goes with the share (no separate step when that works). Otherwise we open a WhatsApp chat to this exact number and save the PDF once so you can attach it. On a PC, WhatsApp opens to this number and the PDF is saved so you can drag it into WhatsApp Web — full auto-send of the file only works from the phone share flow or WhatsApp Business API.
                 </p>
               </motion.div>
 
@@ -585,9 +585,9 @@ export default function POSPage() {
                 >
                   <MessageCircle className="w-4 h-4" />
                   {whatsappSending
-                    ? 'Preparing PDF...'
+                    ? 'Preparing…'
                     : customerWhatsAppValid
-                      ? `Open WhatsApp for ${customerWhatsAppDisplay}`
+                      ? `WhatsApp + PDF (${customerWhatsAppDisplay})`
                       : 'Enter number first'}
                 </motion.button>
               </motion.div>
