@@ -71,6 +71,7 @@ export default function POSPage() {
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [whatsappSending, setWhatsappSending] = useState(false);
   const [whatsappReady, setWhatsappReady] = useState<boolean | null>(null);
+  const [whatsappLinkOnly, setWhatsappLinkOnly] = useState(false);
   const [branchId, setBranchId] = useState<string | null>(user?.branch?._id || null);
   const barcodeRef = useRef<HTMLInputElement>(null);
 
@@ -237,8 +238,14 @@ export default function POSPage() {
       return;
     }
     whatsappAPI.getStatus()
-      .then((res) => setWhatsappReady(Boolean(res.data.data?.configured)))
-      .catch(() => setWhatsappReady(false));
+      .then((res) => {
+        setWhatsappReady(Boolean(res.data.data?.configured));
+        setWhatsappLinkOnly(Boolean(res.data.data?.callmebotConfigured && !res.data.data?.supportsPdfAttachment));
+      })
+      .catch(() => {
+        setWhatsappReady(false);
+        setWhatsappLinkOnly(false);
+      });
   }, [showReceipt]);
 
   const customerWhatsAppDisplay = formatWhatsAppDisplay(whatsappNumber);
@@ -254,7 +261,11 @@ export default function POSPage() {
     try {
       const result = await sendReceiptViaWhatsApp(lastReceipt, whatsappNumber);
       if (result.mode === 'direct') {
-        toast.success(`Invoice PDF sent to ${result.displayNumber}`);
+        if (result.supportsPdf === false) {
+          toast.success(`Invoice link sent to ${result.displayNumber}. PDF saved on this device for your records.`);
+        } else {
+          toast.success(`Invoice PDF sent to ${result.displayNumber}`);
+        }
       } else {
         toast.success(`WhatsApp opened for ${result.displayNumber} — tap Send (PDF downloaded)`);
       }
@@ -557,8 +568,10 @@ export default function POSPage() {
                 />
                 <p className="text-[10px] text-[var(--muted)] mt-1">
                   {whatsappReady === false
-                    ? 'Quick mode: opens WhatsApp to this number + downloads PDF. For auto-send, connect store WhatsApp API in Vercel.'
-                    : 'PDF invoice sends directly from your store WhatsApp to this number.'}
+                    ? 'Quick mode: opens WhatsApp + downloads PDF. Or add CALLMEBOT_API_KEY (free) or Meta API in Vercel for auto-send.'
+                    : whatsappLinkOnly
+                      ? 'CallMeBot: customer gets invoice link on WhatsApp; PDF also saves on this PC when you send.'
+                      : 'PDF invoice sends from your store WhatsApp to this number.'}
                 </p>
               </motion.div>
 

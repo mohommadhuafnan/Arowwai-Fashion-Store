@@ -233,6 +233,8 @@ export type WhatsAppSendResult = {
   displayNumber: string;
   message: string;
   mode: 'direct' | 'fallback';
+  supportsPdf?: boolean;
+  provider?: string;
 };
 
 function downloadPdfBlob(blob: Blob, fileName: string) {
@@ -298,7 +300,11 @@ export async function sendReceiptViaWhatsApp(
       invoiceNumber: receipt.invoiceNumber,
       caption,
     });
-    return { ...res.data.data, mode: 'direct' };
+    const payload = res.data.data as WhatsAppSendResult & { supportsPdf?: boolean };
+    if (payload.supportsPdf === false) {
+      downloadPdfBlob(pdfBlob, receiptPdfFileName(receipt.invoiceNumber));
+    }
+    return { ...payload, mode: 'direct' as const };
   } catch (err: unknown) {
     const status = (err as { response?: { status?: number } })?.response?.status;
     if (status === 503) {
