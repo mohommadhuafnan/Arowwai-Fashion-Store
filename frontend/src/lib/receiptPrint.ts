@@ -59,9 +59,9 @@ export function buildReceiptWhatsAppMessage(receipt: SaleReceipt) {
   ].join('\n');
 }
 
-/** One line for WhatsApp — full line items stay on the PDF only (not a long chat “invoice”). */
+/** Short line for share / links — never claims a PDF is “in the chat” when only a web URL is used. */
 export function buildWhatsAppPdfCaption(receipt: SaleReceipt) {
-  return `${BRAND.fullName} — Invoice ${receipt.invoiceNumber} · ${formatCurrency(receipt.total)}. Official receipt is the attached PDF. Thank you!`;
+  return `${BRAND.fullName} — ${receipt.invoiceNumber} · ${formatCurrency(receipt.total)}`;
 }
 
 export async function generateReceiptQrDataUrl(receipt: SaleReceipt) {
@@ -439,17 +439,49 @@ function downloadPdfBlob(blob: Blob, fileName: string) {
 }
 
 /**
+ * Try to hand off the **PDF file** via the device share sheet (Share → WhatsApp → pick chat).
+ * This is the only standard way to put a file in WhatsApp from a web page without a server-side WhatsApp API.
+ */
+async function tryNativePdfShare(pdfFile: File, receipt: SaleReceipt): Promise<boolean> {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') return false;
+
+  const title = `${BRAND.fullName} — ${receipt.invoiceNumber}`;
+  const payloads: ShareData[] = [
+    { files: [pdfFile], title },
+    { files: [pdfFile], title, text: buildWhatsAppPdfCaption(receipt) },
+  ];
+
+  for (const payload of payloads) {
+    try {
+      if (typeof navigator.canShare === 'function' && !navigator.canShare(payload)) continue;
+      await navigator.share(payload);
+      return true;
+    } catch (e) {
+      const name = (e as { name?: string })?.name;
+      if (name === 'AbortError') throw new Error('Sharing cancelled');
+    }
+  }
+
+  try {
+    await navigator.share({ files: [pdfFile], title });
+    return true;
+  } catch (e) {
+    const name = (e as { name?: string })?.name;
+    if (name === 'AbortError') throw new Error('Sharing cancelled');
+    return false;
+  }
+}
+
+/**
  * WhatsApp handoff for the typed customer number:
- * 1) **Native share** with the PDF — on many phones this sends the file to WhatsApp without a separate “Downloads” step.
- * 2) Else open **WhatsApp directly for that number** (https / whatsapp://) with a short caption; if the PDF could not attach automatically, a one-time file save is offered so you can add it in the same chat.
+ * 1) **Native share with the PDF file** (no misleading “attached PDF” text in a web link).
+ * 2) On **mobile only**, if share is not available: open WhatsApp to that number with a **short factual line** + save PDF once so you can attach it (web links cannot include binary files).
+ * 3) On **desktop**: do **not** open the WhatsApp Web text bridge (it cannot carry your PDF). Save the PDF and explain to use the phone share flow.
  */
 function buildWhatsAppOpenUrls(phoneDigits: string, receipt: SaleReceipt) {
   const text = encodeURIComponent(buildWhatsAppPdfCaption(receipt));
   return {
-    /** Opens the WhatsApp app on many mobile devices */
     appScheme: `whatsapp://send?phone=${phoneDigits}&text=${text}`,
-    /** Reliable in a browser tab; opens WhatsApp Web / app to this number */
-    webSend: `https://api.whatsapp.com/send?phone=${phoneDigits}&text=${text}`,
   };
 }
 
@@ -466,44 +498,26 @@ export async function sendReceiptViaWhatsApp(
   const displayNumber = formatWhatsAppDisplay(phone);
   const pdfBlob = await generateReceiptPdf(receipt);
   const fileName = receiptPdfFileName(receipt.invoiceNumber);
-  const caption = buildWhatsAppPdfCaption(receipt);
-  const { appScheme, webSend } = buildWhatsAppOpenUrls(formatted, receipt);
-  const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const { appScheme } = buildWhatsAppOpenUrls(formatted, receipt);
+  const isMobile =
+    typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
   const extWin = opts?.externalChatWindow;
   const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-  const sharePdfOnly: ShareData = {
-    files: [pdfFile],
-    title: `${BRAND.fullName} — Invoice ${receipt.invoiceNumber}`,
-  };
-  const sharePdfWithShortCaption: ShareData = { ...sharePdfOnly, text: caption };
 
-  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-    try {
-      if (!navigator.canShare) {
-        await navigator.share(sharePdfOnly);
-      } else if (navigator.canShare(sharePdfOnly)) {
-        await navigator.share(sharePdfOnly);
-      } else if (navigator.canShare(sharePdfWithShortCaption)) {
-        await navigator.share(sharePdfWithShortCaption);
-      } else {
-        throw new Error('cannot-share-pdf');
-      }
-      if (extWin && !extWin.closed) extWin.close();
-      return {
-        sentTo: formatted,
-        displayNumber,
-        message: `Pick WhatsApp, then the chat for ${displayNumber} — the invoice goes as the PDF file (no separate download on supported phones).`,
-        mode: 'native-share',
-      };
-    } catch (e) {
-      const name = (e as { name?: string })?.name;
-      if (name === 'AbortError') throw new Error('Sharing cancelled');
-    }
+  const shared = await tryNativePdfShare(pdfFile, receipt);
+  if (shared) {
+    if (extWin && !extWin.closed) extWin.close();
+    return {
+      sentTo: formatted,
+      displayNumber,
+      message: `Choose **WhatsApp**, then open the chat for **${displayNumber}** — confirm the **PDF** is attached and tap Send. (No separate download on this device.)`,
+      mode: 'native-share',
+    };
   }
 
   const navigateWinToWhatsApp = (win: Window) => {
-    win.location.href = isMobile ? appScheme : webSend;
+    win.location.href = appScheme;
   };
 
   const openReservedTab = () => {
@@ -511,7 +525,7 @@ export async function sendReceiptViaWhatsApp(
       try {
         extWin.document.open();
         extWin.document.write(
-          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>WhatsApp</title></head><body style="margin:0;font-family:system-ui,sans-serif;padding:2rem;text-align:center;background:#0f172a;color:#e2e8f0"><p style="font-size:16px">Opening WhatsApp for your customer…</p><p style="font-size:13px;opacity:.75;margin-top:.75rem">If nothing opens, allow pop-ups for this site.</p></body></html>',
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>WhatsApp</title></head><body style="margin:0;font-family:system-ui,sans-serif;padding:2rem;text-align:center;background:#0f172a;color:#e2e8f0"><p style="font-size:16px">Opening WhatsApp…</p><p style="font-size:13px;opacity:.75;margin-top:.75rem">If nothing opens, allow pop-ups for this site.</p></body></html>',
         );
         extWin.document.close();
       } catch {
@@ -523,32 +537,41 @@ export async function sendReceiptViaWhatsApp(
     return false;
   };
 
-  if (openReservedTab()) {
+  if (isMobile) {
+    if (openReservedTab()) {
+      downloadPdfBlob(pdfBlob, fileName);
+      return {
+        sentTo: formatted,
+        displayNumber,
+        message: `WhatsApp opened for ${displayNumber}. The **PDF was saved once** — tap **Attach** (paperclip) → **Document** and pick **${fileName}** if the file did not appear by itself (normal browser limit).`,
+        mode: 'wa-web',
+      };
+    }
     downloadPdfBlob(pdfBlob, fileName);
+    const popped = window.open(appScheme, '_blank', 'noopener,noreferrer');
+    if (!popped || popped.closed) {
+      window.location.href = appScheme;
+      return {
+        sentTo: formatted,
+        displayNumber,
+        message: `Opening WhatsApp for ${displayNumber}. PDF saved as **${fileName}** — attach it in WhatsApp if needed.`,
+        mode: 'wa-web',
+      };
+    }
     return {
       sentTo: formatted,
       displayNumber,
-      message: `WhatsApp should open for ${displayNumber}. The PDF was saved once — attach it in that chat if it did not send automatically (browsers cannot always push the file without this step).`,
+      message: `WhatsApp opened for ${displayNumber}. PDF saved as **${fileName}** — attach in chat if the PDF did not send automatically.`,
       mode: 'wa-web',
     };
   }
 
+  if (extWin && !extWin.closed) extWin.close();
   downloadPdfBlob(pdfBlob, fileName);
-  const popped = window.open(isMobile ? appScheme : webSend, '_blank', 'noopener,noreferrer');
-  if (!popped || popped.closed) {
-    window.location.href = isMobile ? appScheme : webSend;
-    return {
-      sentTo: formatted,
-      displayNumber,
-      message: `Opening WhatsApp for ${displayNumber}. PDF saved — attach it in that chat if needed, then use your browser’s back button to return.`,
-      mode: 'wa-web',
-    };
-  }
-
   return {
     sentTo: formatted,
     displayNumber,
-    message: `WhatsApp opened for ${displayNumber}. PDF saved — attach it in that chat if the file did not appear by itself.`,
+    message: `This PC browser **cannot push a PDF into WhatsApp** (only a web link with text would open, not your file). The invoice was **saved as ${fileName}**. To send the **PDF inside WhatsApp** with one step: open this billing screen on your **phone** and tap WhatsApp again — then use **Share → WhatsApp** for ${displayNumber}, or attach the saved file.`,
     mode: 'wa-web',
   };
 }

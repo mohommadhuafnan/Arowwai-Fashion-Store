@@ -563,7 +563,7 @@ export default function POSPage() {
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--border)' }}
                 />
                 <p className="text-[10px] text-[var(--muted)] mt-1">
-                  Prefer the share sheet → WhatsApp → the number you typed: the PDF can send without a separate download. Otherwise we open WhatsApp to that number and save the PDF once so you can attach it (websites cannot always inject the file into WhatsApp by themselves).
+                  First, your phone should offer **Share** → **WhatsApp** → pick this customer’s chat — the **PDF** is sent as a file (no fake “attached PDF” text). If Share does not appear, we open WhatsApp and save the PDF once so you can attach it. **On a PC browser** only the PDF file is saved — use your phone for one-tap share to WhatsApp.
                 </p>
               </motion.div>
 
