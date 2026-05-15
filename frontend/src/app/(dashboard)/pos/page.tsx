@@ -563,7 +563,7 @@ export default function POSPage() {
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--border)' }}
                 />
                 <p className="text-[10px] text-[var(--muted)] mt-1">
-                  On supported phones, WhatsApp opens with the invoice as a PDF attachment (official receipt). If the device only opens a chat, a short note appears there — attach the downloaded PDF; line items are not pasted as long text.
+                  Prefer the share sheet → WhatsApp → the number you typed: the PDF can send without a separate download. Otherwise we open WhatsApp to that number and save the PDF once so you can attach it (websites cannot always inject the file into WhatsApp by themselves).
                 </p>
               </motion.div>
 
