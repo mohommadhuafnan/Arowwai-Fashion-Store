@@ -68,7 +68,7 @@ const postChat = async (req, res) => {
       return res.json({
         success: true,
         data: {
-          reply: githubAi.localRetailReply(userMessage, snapshot),
+          reply: githubAi.localRetailReply(userMessage, snapshot, { fallbackReason: 'not-configured' }),
           model: 'local-fallback',
           source: 'fallback',
         },
@@ -76,7 +76,8 @@ const postChat = async (req, res) => {
     }
 
     const reply = await githubAi.askRetailAssistant(userMessage, snapshot);
-    const usedFallback = reply.includes('offline assistant') || reply.includes('TrendyPOS offline');
+    const usedFallback =
+      reply.includes('GITHUB_TOKEN') || reply.includes('GitHub Models is busy') || reply.includes('Live AI had a hiccup');
 
     res.json({
       success: true,
@@ -92,7 +93,7 @@ const postChat = async (req, res) => {
     res.json({
       success: true,
       data: {
-        reply: githubAi.localRetailReply(userMessage, snapshot),
+        reply: githubAi.localRetailReply(userMessage, snapshot, { fallbackReason: 'error' }),
         model: 'local-fallback',
         source: 'fallback',
       },
