@@ -23,7 +23,6 @@ const analyticsRoutes = require('./src/routes/analytics.routes');
 const aiRoutes = require('./src/routes/ai.routes');
 const notificationRoutes = require('./src/routes/notification.routes');
 const settingsRoutes = require('./src/routes/settings.routes');
-const whatsappRoutes = require('./src/routes/whatsapp.routes');
 
 let appInstance = null;
 
@@ -80,7 +79,6 @@ async function createApp() {
   app.use('/api/ai', aiRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/settings', settingsRoutes);
-  app.use('/api/whatsapp', whatsappRoutes);
 
   app.use(errorHandler);
 

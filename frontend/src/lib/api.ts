@@ -56,16 +56,6 @@ export const aiAPI = {
   chat: (message: string) => api.post('/ai/chat', { message }),
 };
 
-export const whatsappAPI = {
-  getStatus: () => api.get('/whatsapp/status'),
-  sendInvoice: (data: {
-    phone: string;
-    pdfBase64: string;
-    invoiceNumber: string;
-    caption?: string;
-  }) => api.post('/whatsapp/send-invoice', data),
-};
-
 export const productAPI = {
   getAll: (params?: Record<string, string>) => api.get('/products', { params }),
   getById: (id: string) => api.get(`/products/${id}`),

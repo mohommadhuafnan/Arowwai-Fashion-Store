@@ -2,7 +2,6 @@ import QRCode from 'qrcode';
 import { jsPDF } from 'jspdf';
 import { BRAND, getLogoUrl } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { whatsappAPI } from '@/lib/api';
 
 export interface SaleReceipt {
   invoiceNumber: string;
@@ -218,23 +217,11 @@ export function formatWhatsAppDisplay(phone: string) {
   return `+${formatted}`;
 }
 
-async function blobToBase64(blob: Blob): Promise<string> {
-  const buffer = await blob.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 1) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
 export type WhatsAppSendResult = {
   sentTo: string;
   displayNumber: string;
   message: string;
-  mode: 'direct' | 'fallback';
-  supportsPdf?: boolean;
-  provider?: string;
+  mode: 'manual';
 };
 
 function downloadPdfBlob(blob: Blob, fileName: string) {
@@ -246,39 +233,26 @@ function downloadPdfBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-async function fallbackWhatsAppSend(
-  receipt: SaleReceipt,
-  formatted: string,
-  displayNumber: string,
-  pdfBlob: Blob,
-): Promise<WhatsAppSendResult> {
-  const fileName = receiptPdfFileName(receipt.invoiceNumber);
-  downloadPdfBlob(pdfBlob, fileName);
-
-  const text = [
+function buildManualWhatsAppText(receipt: SaleReceipt, pdfFileName: string) {
+  const full = buildReceiptWhatsAppMessage(receipt);
+  const attachHint = `\n\n📎 PDF saved as: *${pdfFileName}*\nPlease *attach that file* in WhatsApp, then tap *Send*.`;
+  const combined = `${full}${attachHint}`;
+  if (combined.length <= 1800) return combined;
+  return [
     `*${BRAND.fullName}*`,
-    BRAND.location,
-    '',
     `Invoice: ${receipt.invoiceNumber}`,
-    `Date: ${formatDate(receipt.date)}`,
-    `Total: ${formatCurrency(receipt.total)}`,
+    `Total: *${formatCurrency(receipt.total)}*`,
+    `View online: ${buildInvoiceVerifyUrl(receipt.invoiceNumber)}`,
     '',
-    `View invoice online:`,
-    buildInvoiceVerifyUrl(receipt.invoiceNumber),
-    '',
+    `📎 Attach the downloaded PDF (*${pdfFileName}*) then tap Send.`,
     BRAND.receiptFooter,
   ].join('\n');
-
-  window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
-
-  return {
-    sentTo: formatted,
-    displayNumber,
-    message: 'WhatsApp opened to customer number',
-    mode: 'fallback',
-  };
 }
 
+/**
+ * Manual WhatsApp: downloads PDF, opens chat to the number with message text.
+ * Customer receives the message after you attach the PDF and tap Send in WhatsApp.
+ */
 export async function sendReceiptViaWhatsApp(
   receipt: SaleReceipt,
   phone: string,
@@ -290,26 +264,16 @@ export async function sendReceiptViaWhatsApp(
 
   const displayNumber = formatWhatsAppDisplay(phone);
   const pdfBlob = await generateReceiptPdf(receipt);
-  const pdfBase64 = await blobToBase64(pdfBlob);
-  const caption = `Your invoice from ${BRAND.fullName} — ${receipt.invoiceNumber}`;
+  const fileName = receiptPdfFileName(receipt.invoiceNumber);
+  downloadPdfBlob(pdfBlob, fileName);
 
-  try {
-    const res = await whatsappAPI.sendInvoice({
-      phone: formatted,
-      pdfBase64,
-      invoiceNumber: receipt.invoiceNumber,
-      caption,
-    });
-    const payload = res.data.data as WhatsAppSendResult & { supportsPdf?: boolean };
-    if (payload.supportsPdf === false) {
-      downloadPdfBlob(pdfBlob, receiptPdfFileName(receipt.invoiceNumber));
-    }
-    return { ...payload, mode: 'direct' as const };
-  } catch (err: unknown) {
-    const status = (err as { response?: { status?: number } })?.response?.status;
-    if (status === 503) {
-      return fallbackWhatsAppSend(receipt, formatted, displayNumber, pdfBlob);
-    }
-    throw err;
-  }
+  const text = buildManualWhatsAppText(receipt, fileName);
+  window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+
+  return {
+    sentTo: formatted,
+    displayNumber,
+    message: 'WhatsApp opened — attach the PDF and tap Send',
+    mode: 'manual',
+  };
 }
