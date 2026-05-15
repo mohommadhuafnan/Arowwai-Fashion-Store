@@ -395,7 +395,16 @@ export type WhatsAppSendResult = {
   sentTo: string;
   displayNumber: string;
   message: string;
-  mode: 'manual';
+  /** native-share = device share sheet with PDF; wa-web = WhatsApp link in a real tab */
+  mode: 'native-share' | 'wa-web';
+};
+
+export type SendReceiptWhatsAppOptions = {
+  /**
+   * Open with `window.open('about:blank')` in the same click handler *before* any `await`
+   * so the browser does not block WhatsApp as a popup after async PDF generation.
+   */
+  externalChatWindow?: Window | null;
 };
 
 function downloadPdfBlob(blob: Blob, fileName: string) {
@@ -424,12 +433,15 @@ function buildManualWhatsAppText(receipt: SaleReceipt, pdfFileName: string) {
 }
 
 /**
- * Manual WhatsApp: downloads PDF, opens chat to the number with message text.
- * Customer receives the message after you attach the PDF and tap Send in WhatsApp.
+ * WhatsApp invoice handoff:
+ * 1) Prefer Web Share API (PDF file + text) so the user can pick WhatsApp and the contact with attachment where the OS allows it.
+ * 2) Otherwise open `wa.me` in a tab that was opened synchronously on click (`externalChatWindow`) so it is not blocked as a popup.
+ * 3) Fallback: download PDF and open `wa.me` in a new tab or same tab.
  */
 export async function sendReceiptViaWhatsApp(
   receipt: SaleReceipt,
   phone: string,
+  opts?: SendReceiptWhatsAppOptions,
 ): Promise<WhatsAppSendResult> {
   const formatted = formatWhatsAppNumber(phone);
   if (!formatted) {
@@ -439,15 +451,79 @@ export async function sendReceiptViaWhatsApp(
   const displayNumber = formatWhatsAppDisplay(phone);
   const pdfBlob = await generateReceiptPdf(receipt);
   const fileName = receiptPdfFileName(receipt.invoiceNumber);
-  downloadPdfBlob(pdfBlob, fileName);
+  const bodyText = buildReceiptWhatsAppMessage(receipt);
+  const waPrefill = buildManualWhatsAppText(receipt, fileName);
+  const waUrl = `https://wa.me/${formatted}?text=${encodeURIComponent(waPrefill)}`;
 
-  const text = buildManualWhatsAppText(receipt, fileName);
-  window.open(`https://wa.me/${formatted}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  const extWin = opts?.externalChatWindow;
+  const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+  const shareData: ShareData = {
+    files: [pdfFile],
+    text: bodyText,
+    title: `Invoice ${receipt.invoiceNumber}`,
+  };
+
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      if (!navigator.canShare || navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+        if (extWin && !extWin.closed) extWin.close();
+        return {
+          sentTo: formatted,
+          displayNumber,
+          message: `Use WhatsApp and choose ${displayNumber} (or your chat) — invoice PDF was shared from this device.`,
+          mode: 'native-share',
+        };
+      }
+    } catch (e) {
+      const name = (e as { name?: string })?.name;
+      if (name === 'AbortError') throw new Error('Sharing cancelled');
+    }
+  }
+
+  const openReservedTab = () => {
+    if (extWin && !extWin.closed) {
+      try {
+        extWin.document.open();
+        extWin.document.write(
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>WhatsApp</title></head><body style="margin:0;font-family:system-ui,sans-serif;padding:2rem;text-align:center;background:#0f172a;color:#e2e8f0"><p style="font-size:16px">Opening WhatsApp…</p><p style="font-size:13px;opacity:.75;margin-top:.75rem">If this stays blank, allow pop-ups for this site and try again.</p></body></html>',
+        );
+        extWin.document.close();
+      } catch {
+        /* ignore */
+      }
+      extWin.location.href = waUrl;
+      return true;
+    }
+    return false;
+  };
+
+  if (openReservedTab()) {
+    downloadPdfBlob(pdfBlob, fileName);
+    return {
+      sentTo: formatted,
+      displayNumber,
+      message: `WhatsApp opened for ${displayNumber}. PDF also downloaded — attach it in that chat if it is not already there, then tap Send.`,
+      mode: 'wa-web',
+    };
+  }
+
+  downloadPdfBlob(pdfBlob, fileName);
+  const popped = window.open(waUrl, '_blank', 'noopener,noreferrer');
+  if (!popped || popped.closed) {
+    window.location.href = waUrl;
+    return {
+      sentTo: formatted,
+      displayNumber,
+      message: `Opening WhatsApp for ${displayNumber}. PDF downloaded — use your browser’s back button to return to billing if this tab switched away.`,
+      mode: 'wa-web',
+    };
+  }
 
   return {
     sentTo: formatted,
     displayNumber,
-    message: 'WhatsApp opened — attach the PDF and tap Send',
-    mode: 'manual',
+    message: `WhatsApp opened for ${displayNumber}. Attach the downloaded PDF in that chat if needed, then tap Send.`,
+    mode: 'wa-web',
   };
 }

@@ -240,11 +240,18 @@ export default function POSPage() {
       toast.error('Enter a valid customer WhatsApp number');
       return;
     }
+    const chatWindow =
+      typeof window !== 'undefined'
+        ? window.open('about:blank', '_blank', 'noopener,noreferrer')
+        : null;
     setWhatsappSending(true);
     try {
-      const result = await sendReceiptViaWhatsApp(lastReceipt, whatsappNumber);
-      toast.success(`WhatsApp opened for ${result.displayNumber} — attach the downloaded PDF, then tap Send`);
+      const result = await sendReceiptViaWhatsApp(lastReceipt, whatsappNumber, {
+        externalChatWindow: chatWindow,
+      });
+      toast.success(result.message);
     } catch (err: unknown) {
+      chatWindow?.close();
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
         || (err instanceof Error ? err.message : 'Could not send invoice on WhatsApp');
       toast.error(msg);
@@ -556,7 +563,7 @@ export default function POSPage() {
                   style={{ background: 'var(--input-bg)', border: '1px solid var(--border)' }}
                 />
                 <p className="text-[10px] text-[var(--muted)] mt-1">
-                  Downloads the invoice PDF, then opens WhatsApp to this number. Attach the PDF and tap Send (normal WhatsApp use).
+                  On phones you may get a share sheet with WhatsApp and the PDF; otherwise we open a chat to this number and download the PDF to attach. Pop-ups must be allowed if the browser asks.
                 </p>
               </motion.div>
 
