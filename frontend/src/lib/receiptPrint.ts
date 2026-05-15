@@ -59,6 +59,19 @@ export function buildReceiptWhatsAppMessage(receipt: SaleReceipt) {
   ].join('\n');
 }
 
+/** One line for WhatsApp — full line items stay on the PDF only (not a long chat “invoice”). */
+export function buildWhatsAppPdfCaption(receipt: SaleReceipt) {
+  return `${BRAND.fullName} — Invoice ${receipt.invoiceNumber} · ${formatCurrency(receipt.total)}. Official receipt is the attached PDF. Thank you!`;
+}
+
+/** When the browser cannot attach the file to wa.me, user downloads PDF — prefill stays short. */
+function buildWhatsAppPrefillForAttachPdf(receipt: SaleReceipt, fileName: string) {
+  const cap = buildWhatsAppPdfCaption(receipt);
+  const hint = `Attach the PDF "${fileName}" here, then tap Send.`;
+  const out = `${cap} ${hint}`;
+  return out.length <= 1600 ? out : `${cap} Attach the downloaded invoice PDF, then Send.`;
+}
+
 export async function generateReceiptQrDataUrl(receipt: SaleReceipt) {
   return QRCode.toDataURL(buildReceiptQrPayload(receipt), {
     width: 140,
@@ -279,7 +292,16 @@ export async function generateReceiptPdf(receipt: SaleReceipt): Promise<Blob> {
   doc.setFontSize(11);
   setAccent();
   doc.text('INVOICE', pageW / 2, y, { align: 'center' });
-  y += 6;
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  setMuted();
+  doc.text('Official customer invoice — all line items and totals are on this document', pageW / 2, y, {
+    align: 'center',
+    maxWidth: contentW,
+  });
+  y += 5;
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   setInk();
   doc.text(receipt.invoiceNumber, pageW / 2, y, { align: 'center' });
@@ -416,27 +438,10 @@ function downloadPdfBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-function buildManualWhatsAppText(receipt: SaleReceipt, pdfFileName: string) {
-  const full = buildReceiptWhatsAppMessage(receipt);
-  const attachHint = `\n\n📎 PDF saved as: *${pdfFileName}*\nPlease *attach that file* in WhatsApp, then tap *Send*.`;
-  const combined = `${full}${attachHint}`;
-  if (combined.length <= 1800) return combined;
-  return [
-    `*${BRAND.fullName}*`,
-    `Invoice: ${receipt.invoiceNumber}`,
-    `Total: *${formatCurrency(receipt.total)}*`,
-    `View online: ${buildInvoiceVerifyUrl(receipt.invoiceNumber)}`,
-    '',
-    `📎 Attach the downloaded PDF (*${pdfFileName}*) then tap Send.`,
-    BRAND.receiptFooter,
-  ].join('\n');
-}
-
 /**
- * WhatsApp invoice handoff:
- * 1) Prefer Web Share API (PDF file + text) so the user can pick WhatsApp and the contact with attachment where the OS allows it.
- * 2) Otherwise open `wa.me` in a tab that was opened synchronously on click (`externalChatWindow`) so it is not blocked as a popup.
- * 3) Fallback: download PDF and open `wa.me` in a new tab or same tab.
+ * WhatsApp invoice handoff — customer-facing record is the **PDF** (not a long text invoice in chat).
+ * 1) Prefer native share with the PDF file (optional one-line caption).
+ * 2) Else open wa.me with a **short** prefill + downloaded PDF to attach.
  */
 export async function sendReceiptViaWhatsApp(
   receipt: SaleReceipt,
@@ -451,30 +456,36 @@ export async function sendReceiptViaWhatsApp(
   const displayNumber = formatWhatsAppDisplay(phone);
   const pdfBlob = await generateReceiptPdf(receipt);
   const fileName = receiptPdfFileName(receipt.invoiceNumber);
-  const bodyText = buildReceiptWhatsAppMessage(receipt);
-  const waPrefill = buildManualWhatsAppText(receipt, fileName);
+  const caption = buildWhatsAppPdfCaption(receipt);
+  const waPrefill = buildWhatsAppPrefillForAttachPdf(receipt, fileName);
   const waUrl = `https://wa.me/${formatted}?text=${encodeURIComponent(waPrefill)}`;
 
   const extWin = opts?.externalChatWindow;
   const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-  const shareData: ShareData = {
+  const sharePdfOnly: ShareData = {
     files: [pdfFile],
-    text: bodyText,
-    title: `Invoice ${receipt.invoiceNumber}`,
+    title: `${BRAND.fullName} — Invoice ${receipt.invoiceNumber}`,
   };
+  const sharePdfWithShortCaption: ShareData = { ...sharePdfOnly, text: caption };
 
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {
-      if (!navigator.canShare || navigator.canShare(shareData)) {
-        await navigator.share(shareData);
-        if (extWin && !extWin.closed) extWin.close();
-        return {
-          sentTo: formatted,
-          displayNumber,
-          message: `Use WhatsApp and choose ${displayNumber} (or your chat) — invoice PDF was shared from this device.`,
-          mode: 'native-share',
-        };
+      if (!navigator.canShare) {
+        await navigator.share(sharePdfOnly);
+      } else if (navigator.canShare(sharePdfOnly)) {
+        await navigator.share(sharePdfOnly);
+      } else if (navigator.canShare(sharePdfWithShortCaption)) {
+        await navigator.share(sharePdfWithShortCaption);
+      } else {
+        throw new Error('cannot-share-pdf');
       }
+      if (extWin && !extWin.closed) extWin.close();
+      return {
+        sentTo: formatted,
+        displayNumber,
+        message: `Choose WhatsApp → ${displayNumber}. Send the PDF — that is the official invoice (chat text is optional).`,
+        mode: 'native-share',
+      };
     } catch (e) {
       const name = (e as { name?: string })?.name;
       if (name === 'AbortError') throw new Error('Sharing cancelled');
@@ -503,7 +514,7 @@ export async function sendReceiptViaWhatsApp(
     return {
       sentTo: formatted,
       displayNumber,
-      message: `WhatsApp opened for ${displayNumber}. PDF also downloaded — attach it in that chat if it is not already there, then tap Send.`,
+      message: `WhatsApp opened for ${displayNumber}. A short note is in the chat — the official invoice is the PDF file (attach the download, then Send).`,
       mode: 'wa-web',
     };
   }
@@ -515,7 +526,7 @@ export async function sendReceiptViaWhatsApp(
     return {
       sentTo: formatted,
       displayNumber,
-      message: `Opening WhatsApp for ${displayNumber}. PDF downloaded — use your browser’s back button to return to billing if this tab switched away.`,
+      message: `Opening WhatsApp for ${displayNumber}. PDF downloaded — that file is the invoice; attach it in WhatsApp (chat shows a short note only).`,
       mode: 'wa-web',
     };
   }
@@ -523,7 +534,7 @@ export async function sendReceiptViaWhatsApp(
   return {
     sentTo: formatted,
     displayNumber,
-    message: `WhatsApp opened for ${displayNumber}. Attach the downloaded PDF in that chat if needed, then tap Send.`,
+    message: `WhatsApp opened for ${displayNumber}. Attach the downloaded PDF — it is the full invoice (not the short chat text).`,
     mode: 'wa-web',
   };
 }
