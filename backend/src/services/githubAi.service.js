@@ -1,5 +1,6 @@
 const ENDPOINT = 'https://models.github.ai/inference';
-const DEFAULT_MODEL = process.env.GITHUB_AI_MODEL || 'deepseek/DeepSeek-V3-0324';
+/** Default matches GitHub “Models” quickstart; override with GITHUB_AI_MODEL. External models: custom/key_id/model_id */
+const DEFAULT_MODEL = process.env.GITHUB_AI_MODEL || 'openai/gpt-4o-mini';
 
 let clientPromise = null;
 
@@ -37,7 +38,7 @@ function formatAiError(err) {
     return 'AI service temporarily unavailable. Using offline assistant.';
   }
   if (/unauthorized|401|403|invalid.*token/i.test(msg)) {
-    return 'GitHub AI token invalid or expired. Check GITHUB_TOKEN in Vercel env vars.';
+    return 'GitHub AI rejected the token — use a PAT with models:read (fine-grained: Models permission) and set GITHUB_TOKEN only on the backend / Vercel server env.';
   }
   return msg || 'GitHub AI request failed';
 }

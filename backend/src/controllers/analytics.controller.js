@@ -114,7 +114,7 @@ const getAIInsights = async (req, res) => {
         { season: 'Summer', products: ['Linen Shirts', 'Cotton Dresses', 'Sandals'] },
         { season: 'Winter', products: ['Wool Coats', 'Thermal Wear', 'Boots'] },
       ],
-      aiSummary: 'Using local analytics. Connect GITHUB_TOKEN for live AI insights.',
+      aiSummary: 'Using local analytics. Set GITHUB_TOKEN (models:read) on the server for live GitHub Models insights.',
       source: 'fallback',
     };
   };
