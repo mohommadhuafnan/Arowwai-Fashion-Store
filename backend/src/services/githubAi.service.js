@@ -60,6 +60,11 @@ function localRetailReply(userMessage, storeContext = null, meta = {}) {
   const orders = ctx.totalOrders || 0;
   const customers = ctx.customerCount || 0;
   const q = userMessage.toLowerCase().trim();
+  const tday = ctx.todaySales;
+  const yday = ctx.yesterdaySales;
+  const w7 = ctx.last7Days;
+  const h24 = ctx.last24Hours;
+  const inv = ctx.recentInvoices || [];
 
   const tail = () => {
     if (reason === 'not-configured') {
@@ -75,13 +80,50 @@ function localRetailReply(userMessage, storeContext = null, meta = {}) {
   };
 
   if (/^(hi|hello|hey|hola)\b|^good\s+(morning|afternoon|evening)\b/.test(q) || /^(hi|hello)[\s!.?]*$/i.test(userMessage.trim())) {
-    return `Hello — I’m the built-in assistant for ${ctx.store || 'your store'}. Ask about bestsellers, low stock, or promos. (${orders} orders on file, ${customers} customers.)${tail()}`;
+    const td = tday && tday.orders !== undefined ? ` Today so far (${tday.date}): ${tday.orders} orders, LKR ${(tday.revenue || 0).toLocaleString()}.` : '';
+    return `Hello — I’m the built-in assistant for ${ctx.store || 'your store'}.${td} Ask about today’s sales, low stock, or promos. (${orders} lifetime orders, ${customers} customers.)${tail()}`;
   }
   if (/help|what can you|how (do|can) i use|what should i ask/.test(q)) {
-    return `Try: “What’s selling best?”, “Any low stock?”, or “Discount ideas”. I use live data—right now strong lines include ${top}.${tail()}`;
+    return `Try: “What were today’s sales?”, “Any low stock?”, or “Discount ideas”. I use live data—strong lines include ${top}.${tail()}`;
   }
   if (/who are you|what are you|are you (ai|a bot)/.test(q)) {
-    return `I answer from your POS snapshot (sales, stock, customers). I’m not the full cloud model unless GitHub AI is enabled on the server.${tail()}`;
+    return `I answer from your POS snapshot (todaySales, recent invoices, stock, customers). Full cloud answers need GitHub Models on the server.${tail()}`;
+  }
+  if (/stock|inventory|restock|low/.test(q)) {
+    return low > 0
+      ? `You have ${low} low-stock item(s). Review inventory and reorder ${top} first. Average order value is LKR ${avg.toLocaleString()}.${tail()}`
+      : `Stock levels look stable. Keep monitoring ${top} as they drive most sales.${tail()}`;
+  }
+  if (/today|this morning|today'?s?\s*(sale|revenue|turnover|income|business)|right now.*sale/i.test(q)) {
+    if (tday) {
+      return `Today (${tday.date}, Colombo day): **${tday.orders}** completed sale(s), revenue **LKR ${(tday.revenue || 0).toLocaleString()}**. Compare yesterday: ${yday?.orders || 0} orders, LKR ${(yday?.revenue || 0).toLocaleString()}.${tail()}`;
+    }
+    return `Today’s figures aren’t in the snapshot yet (no completed sales in the Colombo day window, or data still syncing).${tail()}`;
+  }
+  if (/yesterday|previous day|last night/i.test(q)) {
+    if (yday) {
+      return `Yesterday (${yday.date}): **${yday.orders}** sale(s), **LKR ${(yday.revenue || 0).toLocaleString()}**. Today so far: ${tday?.orders || 0} orders, LKR ${(tday?.revenue || 0).toLocaleString()}.${tail()}`;
+    }
+    return `Yesterday’s figures aren’t in the snapshot yet.${tail()}`;
+  }
+  if (/last\s*7|past\s*7|seven day|this week|weekly/i.test(q)) {
+    if (w7) {
+      return `Last rolling 7 days: **${w7.orders}** orders, **LKR ${(w7.revenue || 0).toLocaleString()}** total revenue.${tail()}`;
+    }
+    return `Rolling 7-day totals aren’t available yet.${tail()}`;
+  }
+  if (/last\s*24|past\s*24|since yesterday/i.test(q)) {
+    if (h24) {
+      return `Last 24 hours: **${h24.orders}** orders, **LKR ${(h24.revenue || 0).toLocaleString()}** (since ${h24.since ? String(h24.since).slice(0, 16) : 'rolling window'}).${tail()}`;
+    }
+    return `Last 24-hour totals aren’t available yet.${tail()}`;
+  }
+  if (/last\s*(order|sale|invoice)|recent\s*(order|sale)|latest\s*(bill|invoice)/i.test(q)) {
+    if (inv.length) {
+      const r = inv[0];
+      return `Most recent completed sale: **${r.invoice}** for **LKR ${(r.total || 0).toLocaleString()}** at ${new Date(r.at).toISOString().slice(0, 16)}Z.${tail()}`;
+    }
+    return `No recent completed sales in the snapshot yet.${tail()}`;
   }
   if (/customer|clients|shoppers|loyalty/.test(q)) {
     return `You have ${customers} active customers on file and ${orders} completed orders. Avg order about LKR ${avg.toLocaleString()}—reward repeat buyers on ${topOne}.${tail()}`;
@@ -89,23 +131,23 @@ function localRetailReply(userMessage, storeContext = null, meta = {}) {
   if (/best\s*sell|top\s*product|moving|popular|what('?s|\s+is)\s+selling/.test(q)) {
     return `Strong performers recently: ${top}. Double-check sizes/colors on ${topOne} so you don’t miss sales.${tail()}`;
   }
-  if (/stock|inventory|restock|low/.test(q)) {
-    return low > 0
-      ? `You have ${low} low-stock item(s). Review inventory and reorder ${top} first. Average order value is LKR ${avg.toLocaleString()}.${tail()}`
-      : `Stock levels look stable. Keep monitoring ${top} as they drive most sales.${tail()}`;
-  }
   if (/sale|revenue|profit|earn|turnover/.test(q)) {
-    return `Recent average order value is LKR ${avg.toLocaleString()} with ${orders} total orders. Focus promotions on ${top} to lift revenue this week.${tail()}`;
+    const t = tday;
+    const extra = t ? ` Today: ${t.orders} orders / LKR ${(t.revenue || 0).toLocaleString()}.` : '';
+    return `All-time snapshot: average order **LKR ${avg.toLocaleString()}**, **${orders}** completed orders total.${extra} Strong products: ${top}.${tail()}`;
   }
   if (/price|discount|promo|mark\s*down|offer/.test(q)) {
     return `For fashion retail in Mawanella, bundle slow movers with ${top.split(',')[0] || 'bestsellers'} and cap discounts around 10–15% to protect margin.${tail()}`;
   }
 
-  const n = (userMessage || '').length % 3;
+  const n = ((userMessage || '').length + (ctx.snapshotGeneratedAt || '').length) % 4;
+  const t0 = ctx.todaySales;
+  const todayBit = t0 ? ` Today (${t0.date}): ${t0.orders} orders, LKR ${(t0.revenue || 0).toLocaleString()}.` : '';
   const bodies = [
-    `Quick view: ${customers} customers, ${orders} orders, typical order about LKR ${avg.toLocaleString()}. Movers: ${top}. Say “low stock”, “sales”, or “promos” for specifics.`,
-    `From your data: bestsellers include ${top}. Avg sale ~LKR ${avg.toLocaleString()}. What do you want next—inventory checks, revenue, or pricing?`,
-    `Snapshot: ${orders} completed orders, ${customers} customers. Strong products: ${top}. Rephrase with one topic (e.g. stock, discounts) and I’ll narrow it down.`,
+    `Quick view:${todayBit} ${customers} customers, ${orders} lifetime orders, avg ~LKR ${avg.toLocaleString()}. Movers: ${top}. Ask a specific day or “last 7 days”.`,
+    `Data snapshot:${todayBit} Bestsellers: ${top}. Last 7d revenue LKR ${(w7?.revenue || 0).toLocaleString()} (${w7?.orders || 0} orders). What metric do you want next?`,
+    `From POS:${todayBit} Recent invoice: ${inv[0] ? `${inv[0].invoice} (LKR ${inv[0].total})` : 'none yet'}. Say “today’s sales” or “low stock” to zoom in.`,
+    `Snapshot:${todayBit} Yesterday LKR ${(yday?.revenue || 0).toLocaleString()} (${yday?.orders || 0} orders). Rephrase your question (one topic) for a tighter answer.`,
   ];
   return bodies[n] + tail();
 }
@@ -173,27 +215,43 @@ function extractJsonBlock(text) {
 }
 
 /**
- * Retail-focused assistant for AROWWAI Fashion Store POS.
+ * Retail assistant — uses rich snapshot + optional chat history so answers match each question.
+ * @param {string} userMessage
+ * @param {object|null} storeContext
+ * @param {Array<{role: string, content: string}>} [history]
  */
-async function askRetailAssistant(userMessage, storeContext = null) {
+async function askRetailAssistant(userMessage, storeContext = null, history = []) {
+  const safeHistory = Array.isArray(history)
+    ? history
+        .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+        .slice(-8)
+        .map((m) => ({
+          role: m.role,
+          content: m.content.slice(0, 2500),
+        }))
+    : [];
+
   const contextBlock = storeContext
-    ? `\n\nCurrent store snapshot (JSON):\n${JSON.stringify(storeContext, null, 2)}`
+    ? `\n\nLIVE POS snapshot (JSON — read fields like todaySales, yesterdaySales, last7Days, last24Hours, recentInvoices, topProducts, lowStock, salesTrend, avgOrderValue, totalOrders; today/yesterday use Asia/Colombo calendar day):\n${JSON.stringify(storeContext, null, 2)}`
     : '';
 
+  const systemPrompt =
+    'You are TrendyPOS AI for AROWWAI Fashion Store in Mawanella, Sri Lanka. ' +
+    'You MUST answer the user’s *current* question using numbers from the JSON snapshot when relevant (e.g. todaySales for “today”, yesterdaySales for “yesterday”, last7Days, recentInvoices). ' +
+    'Do NOT repeat your previous assistant message verbatim if the user asked something new—vary wording and focus on what they asked now. ' +
+    'Use LKR. Be concise and practical unless they ask for detail.';
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...safeHistory,
+    {
+      role: 'user',
+      content: `Question:\n${userMessage.trim()}${contextBlock}`,
+    },
+  ];
+
   try {
-    return await chatCompletion([
-      {
-        role: 'system',
-        content:
-          'You are TrendyPOS AI, a helpful retail analyst for AROWWAI Fashion Store in Mawanella, Sri Lanka. ' +
-          'Give practical, concise advice about sales, inventory, pricing, and fashion retail. ' +
-          'Use LKR for currency. Be direct and actionable.',
-      },
-      {
-        role: 'user',
-        content: `${userMessage}${contextBlock}`,
-      },
-    ], { temperature: 0.6, max_tokens: 1500 });
+    return await chatCompletion(messages, { temperature: 0.58, max_tokens: 1800 });
   } catch (err) {
     console.error('GitHub AI chat fallback:', err.message);
     const msg = String(err?.message || '');

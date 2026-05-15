@@ -106,10 +106,11 @@ export default function AnalyticsPage() {
     const text = chatInput.trim();
     if (!text || chatLoading) return;
     setChatInput('');
+    const historyPayload = messages.map((m) => ({ role: m.role, content: m.content }));
     setMessages((m) => [...m, { role: 'user', content: text }]);
     setChatLoading(true);
     try {
-      const res = await aiAPI.chat(text);
+      const res = await aiAPI.chat(text, historyPayload);
       setMessages((m) => [...m, { role: 'assistant', content: res.data.data.reply }]);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'AI chat failed';
@@ -301,7 +302,9 @@ export default function AnalyticsPage() {
         <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
           <Bot className="w-4 h-4 text-[var(--accent)]" /> Ask TrendyPOS AI
         </h3>
-        <p className="text-xs text-[var(--muted)] mb-4">Ask about sales, stock, pricing, or promotions. Uses your live store data.</p>
+        <p className="text-xs text-[var(--muted)] mb-4">
+          Answers use your live POS data (today / yesterday / last 7 days, recent invoices, stock). Ask naturally, e.g. &quot;What were today&apos;s sales?&quot; — follow-ups use chat context so replies stay on topic.
+        </p>
 
         <div className="max-h-64 overflow-y-auto space-y-3 mb-4 pr-1">
           {messages.length === 0 && (

@@ -53,7 +53,8 @@ export const analyticsAPI = {
 
 export const aiAPI = {
   getStatus: () => api.get('/ai/status', { timeout: 20000 }),
-  chat: (message: string) => api.post('/ai/chat', { message }, { timeout: 120000 }),
+  chat: (message: string, history?: { role: string; content: string }[]) =>
+    api.post('/ai/chat', { message, history: history ?? [] }, { timeout: 120000 }),
 };
 
 export const productAPI = {
