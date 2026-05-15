@@ -1,6 +1,8 @@
+const fs = require('fs');
 const Product = require('../models/Product.model');
 const { getPaginationMeta } = require('../utils/helpers');
 const QRCode = require('qrcode');
+const cloudinarySvc = require('../services/cloudinary.service');
 
 const getProducts = async (req, res) => {
   const { page = 1, limit = 20, search, category, branch, isActive } = req.query;
@@ -69,10 +71,61 @@ const uploadProductImage = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No image file provided' });
   }
-  const url = req.file.buffer
-    ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
-    : `/uploads/products/${req.file.filename}`;
-  res.json({ success: true, data: { url } });
+
+  const diskPath = req.file.path;
+
+  try {
+    if (cloudinarySvc.isConfigured()) {
+      let buffer = req.file.buffer;
+      if (!buffer && diskPath) {
+        buffer = fs.readFileSync(diskPath);
+      }
+      if (!buffer) {
+        return res.status(400).json({ success: false, message: 'Could not read uploaded file' });
+      }
+      const url = await cloudinarySvc.uploadImageBuffer(buffer, req.file.mimetype);
+      if (diskPath && fs.existsSync(diskPath)) {
+        try {
+          fs.unlinkSync(diskPath);
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      return res.json({ success: true, data: { url } });
+    }
+
+    if (process.env.VERCEL) {
+      return res.status(503).json({
+        success: false,
+        message:
+          'Image hosting requires Cloudinary on Vercel. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET.',
+      });
+    }
+
+    if (diskPath && req.file.filename) {
+      return res.json({ success: true, data: { url: `/uploads/products/${req.file.filename}` } });
+    }
+
+    if (req.file.buffer) {
+      const url = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      return res.json({ success: true, data: { url } });
+    }
+
+    return res.status(400).json({ success: false, message: 'Could not process upload' });
+  } catch (err) {
+    console.error('uploadProductImage:', err.message);
+    if (diskPath && fs.existsSync(diskPath)) {
+      try {
+        fs.unlinkSync(diskPath);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Image upload failed',
+    });
+  }
 };
 
 module.exports = {
