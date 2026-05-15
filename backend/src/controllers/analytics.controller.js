@@ -138,7 +138,7 @@ const getAIInsights = async (req, res) => {
         success: true,
         data: {
           ...aiData,
-          salesTrend: salesTrend || [],
+          salesTrend: snapshot.salesTrend || [],
           source: 'github-ai',
           model: githubAi.getModel(),
         },
